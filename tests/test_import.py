@@ -15,8 +15,8 @@ def test_banks_returns_list(client):
 
 def test_banks_contains_configured_names(client):
     banks = client.get("/api/banks").json()
-    assert "Chase" in banks
-    assert "Ally" in banks
+    assert "Chase Freedom" in banks
+    assert "Capital One" in banks
 
 
 # ── /api/transactions/import — happy path ────────────────────────────────────

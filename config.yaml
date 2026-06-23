@@ -5,11 +5,16 @@ sync_on_shutdown: true
 sync_interval_minutes: 5
 
 banks:
-  - Chase
-  - Bank of America
-  - Wells Fargo
-  - Citibank
+  - Chase Freedom
+  - Chase Freedom Plus
+  - Chase Sapphire
+  - Bank of America Better Balance rewards
+  - Bank of America Checking
+#  - Wells Fargo
+#  - Citibank
   - Capital One
   - American Express
-  - Ally
-  - Discover
+  - Fidelity
+  - Sofi
+#  - Ally
+#  - Discover

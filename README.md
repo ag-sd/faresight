@@ -52,6 +52,31 @@ uvicorn app.faresight:app --reload
 
 Open http://localhost:8000 in your browser.
 
+## Stopping and restarting
+
+**Foreground (default):**
+```bash
+# Stop
+Ctrl+C
+
+# Restart
+uvicorn app.faresight:app --reload
+```
+
+**Background process:**
+```bash
+# Find the PID
+lsof -ti tcp:8000
+
+# Stop it
+kill $(lsof -ti tcp:8000)
+
+# Restart
+uvicorn app.faresight:app --reload &
+```
+
+**After editing `config.yaml`** (e.g. adding banks), a full restart is required — `--reload` only watches `.py` files.
+
 ## Configuration (`config.yaml`)
 
 | Key                    | Default                                       | Description                         |
