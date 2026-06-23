@@ -49,9 +49,10 @@ HTML/JS frontend with Chart.js.
 ## Development rules
 
 - **Always add tests.** Every code change — new feature, bug fix, refactor — must include
-  corresponding tests in `tests/`. Run `pytest` before declaring work done.
+  corresponding tests in `tests/`. Run `pytest` before declaring work done. List coverage once done
 - Tests use an in-memory SQLite DB via the `client` fixture in `tests/conftest.py`.
   Never write tests that touch the real `local_db_path`.
+- Try to write tests for the UI as well to the best extent possible.
 
 ## Runtime notes
 
@@ -104,5 +105,4 @@ The `autouse=True` `reset_status` fixture in `tests/test_sync.py` resets all six
 
 ## What is NOT implemented yet
 
-- CSV import
 - Date-range filtering on the transactions endpoint
