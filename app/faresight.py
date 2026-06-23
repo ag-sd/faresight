@@ -1,14 +1,18 @@
 from contextlib import asynccontextmanager, suppress
+from datetime import date as date_type
 from pathlib import Path
 from typing import Optional
 import asyncio
+import csv
+import io
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import extract, func
 from sqlalchemy.orm import Session
 
+from app.config import BANKS
 from app.database import Base, engine, get_db
 from app.models import Transaction
 from app.schemas import TransactionCreate, TransactionOut, TransactionUpdate
@@ -129,6 +133,45 @@ def summary_by_month(db: Session = Depends(get_db)):
 def list_categories(db: Session = Depends(get_db)):
     rows = db.query(Transaction.category).distinct().all()
     return sorted(r.category for r in rows)
+
+
+@app.get("/api/banks")
+def list_banks():
+    return BANKS
+
+
+@app.post("/api/transactions/import")
+async def import_csv(
+    file: UploadFile = File(...),
+    bank: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    content = await file.read()
+    text = content.decode("utf-8-sig")  # strip BOM if present
+    reader = csv.DictReader(io.StringIO(text))
+
+    imported = 0
+    errors = []
+
+    for i, row in enumerate(reader, start=2):  # row 1 is the header
+        try:
+            tx = Transaction(
+                date=date_type.fromisoformat(row["date"].strip()),
+                description=row["description"].strip(),
+                amount=float(row["amount"].strip()),
+                category=row.get("category", "").strip() or "Uncategorized",
+                note=row.get("note", "").strip() or None,
+                source=bank,
+            )
+            db.add(tx)
+            imported += 1
+        except KeyError as e:
+            errors.append(f"Row {i}: missing column {e}")
+        except ValueError as e:
+            errors.append(f"Row {i}: {e}")
+
+    db.commit()
+    return {"imported": imported, "errors": errors}
 
 
 # ── Sync endpoints ────────────────────────────────────────────────────────────

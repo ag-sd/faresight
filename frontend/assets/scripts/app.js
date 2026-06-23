@@ -10,8 +10,48 @@ const api = async (path, opts = {}) => {
 let catChart, monthChart;
 let categoryFilter = '';
 
-// Base classes always present on the NAS status banner when visible.
 const NAS_BASE = 'alert d-flex align-items-center mb-0 rounded-0 border-0 border-bottom px-4 py-2 small fw-medium';
+
+// ── Banks ─────────────────────────────────────────────────────────────────────
+async function refreshBanks() {
+  const banks = await api('/api/banks');
+  const select = document.getElementById('bankSelect');
+  select.innerHTML = '<option value="">Select bank…</option>';
+  banks.forEach(b => {
+    select.insertAdjacentHTML('beforeend', `<option value="${esc(b)}">${esc(b)}</option>`);
+  });
+}
+
+// ── Import CSV form ───────────────────────────────────────────────────────────
+document.getElementById('importForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const resultDiv = document.getElementById('importResult');
+  resultDiv.className = 'mt-3 d-none';
+
+  const fd = new FormData(e.target);
+  let res, result;
+  try {
+    res = await fetch('/api/transactions/import', { method: 'POST', body: fd });
+    result = await res.json();
+  } catch (err) {
+    resultDiv.className = 'mt-3 alert alert-danger';
+    resultDiv.textContent = `Upload failed: ${err.message}`;
+    return;
+  }
+
+  if (result.errors.length) {
+    resultDiv.className = 'mt-3 alert alert-warning';
+    resultDiv.innerHTML =
+      `Imported ${result.imported} transaction(s). ${result.errors.length} row(s) skipped.` +
+      `<ul class="mb-0 mt-1">${result.errors.map(err => `<li>${esc(err)}</li>`).join('')}</ul>`;
+  } else {
+    resultDiv.className = 'mt-3 alert alert-success';
+    resultDiv.textContent = `Successfully imported ${result.imported} transaction(s).`;
+  }
+  resultDiv.classList.remove('d-none');
+  e.target.reset();
+  await refreshAll();
+});
 
 // ── Charts ────────────────────────────────────────────────────────────────────
 async function refreshCharts() {
@@ -20,7 +60,6 @@ async function refreshCharts() {
     api('/api/summary/by-month'),
   ]);
 
-  // Category pie
   const palette = ['#0071e3','#30d158','#ff9f0a','#ff375f','#bf5af2','#5e5ce6','#64d2ff','#ff6961'];
   if (catChart) catChart.destroy();
   catChart = new Chart(document.getElementById('catChart'), {
@@ -32,7 +71,6 @@ async function refreshCharts() {
     options: { plugins: { legend: { position: 'right' } }, maintainAspectRatio: false },
   });
 
-  // Monthly bar
   const labels = byMonth.map(r => `${r.year}-${String(r.month).padStart(2,'0')}`);
   if (monthChart) monthChart.destroy();
   monthChart = new Chart(document.getElementById('monthChart'), {
@@ -63,7 +101,9 @@ async function refreshCategories() {
 
 // ── Transaction list ──────────────────────────────────────────────────────────
 async function refreshTable() {
-  const url = categoryFilter ? `/api/transactions?category=${encodeURIComponent(categoryFilter)}` : '/api/transactions';
+  const url = categoryFilter
+    ? `/api/transactions?category=${encodeURIComponent(categoryFilter)}`
+    : '/api/transactions';
   const txs = await api(url);
   const tbody = document.getElementById('txBody');
 
@@ -99,7 +139,7 @@ async function deleteTx(id) {
   await refreshAll();
 }
 
-// ── Add form ──────────────────────────────────────────────────────────────────
+// ── Add manually form ─────────────────────────────────────────────────────────
 document.getElementById('addForm').addEventListener('submit', async e => {
   e.preventDefault();
   const fd = new FormData(e.target);
@@ -186,5 +226,6 @@ async function refreshAll() {
 
 document.querySelector('input[name=date]').valueAsDate = new Date();
 
+refreshBanks();
 refreshNasBanner();
 refreshAll();
