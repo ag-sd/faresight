@@ -2,8 +2,8 @@
 
 ## Project summary
 
-Local expense tracker. FastAPI backend + SQLite (SQLAlchemy 2) + plain HTML/JS
-frontend with Chart.js. No NAS sync yet — that is a planned future step.
+Local expense tracker. FastAPI backend + SQLite (SQLAlchemy 2) + Bootstrap 5.3
+HTML/JS frontend with Chart.js.
 
 ## Original scaffold instruction
 
@@ -42,7 +42,7 @@ frontend with Chart.js. No NAS sync yet — that is a planned future step.
 - `app/schemas.py` — Pydantic schemas for request/response
 - `app/faresight.py` — all routes; serves `frontend/index.html` at `/`
 - `app/nas.py` — stub only; raises `NotImplementedError`
-- `frontend/index.html` — single-file dashboard
+- `frontend/index.html` — single-file dashboard; Bootstrap 5.3 + Chart.js 4; no separate CSS/JS files
 
 ## Development rules
 

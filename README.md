@@ -9,7 +9,7 @@ with a FastAPI backend and a plain HTML/JS/Chart.js frontend.
 |----------|-----------------------------------------|
 | Backend  | Python · FastAPI · SQLAlchemy 2         |
 | Database | SQLite (local file, path from config)   |
-| Frontend | Plain HTML + Vanilla JS + Chart.js 4    |
+| Frontend | Bootstrap 5.3 + Vanilla JS + Chart.js 4 |
 
 ## Project layout
 
@@ -23,7 +23,7 @@ faresight/
 │   ├── config.py      # Reads config.yaml into typed constants
 │   └── nas.py         # Placeholder for NAS sync logic (not yet implemented)
 ├── frontend/
-│   └── index.html     # Dashboard: add/delete transactions, pie + bar charts
+│   └── index.html     # Dashboard: Bootstrap 5.3 UI; add/delete transactions, pie + bar charts
 ├── config.yaml        # App configuration
 └── requirements.txt
 ```

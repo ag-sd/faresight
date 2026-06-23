@@ -4,201 +4,120 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Faresight — Expense Tracker</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: system-ui, sans-serif;
-      background: #f5f5f7;
-      color: #1d1d1f;
-      min-height: 100vh;
-    }
-
-    header {
-      background: #1d1d1f;
-      color: #fff;
-      padding: 1rem 2rem;
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
-    header h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; }
-    header span { opacity: 0.5; font-size: 0.9rem; }
-
-    main { max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem; }
-
-    /* ── Charts row ── */
-    .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem; }
-    .card {
-      background: #fff;
-      border-radius: 14px;
-      padding: 1.25rem 1.5rem;
-      box-shadow: 0 1px 4px rgba(0,0,0,.08);
-    }
-    .card h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: .06em; color: #6e6e73; margin-bottom: 1rem; }
+    /* Chart.js requires an explicit container height */
     .chart-wrap { position: relative; height: 220px; }
-
-    /* ── Form ── */
-    .form-card { background: #fff; border-radius: 14px; padding: 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 2rem; }
-    .form-card h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: .06em; color: #6e6e73; margin-bottom: 1rem; }
-    form { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .75rem; }
-    form input, form select, form textarea {
-      width: 100%;
-      padding: .5rem .75rem;
-      border: 1px solid #d1d1d6;
-      border-radius: 8px;
-      font-size: .9rem;
-      font-family: inherit;
-      background: #fafafa;
-    }
-    form textarea { resize: vertical; min-height: 38px; grid-column: 1 / -1; }
-    .btn {
-      padding: .55rem 1.2rem;
-      border: none;
-      border-radius: 8px;
-      font-size: .9rem;
-      font-family: inherit;
-      cursor: pointer;
-      transition: opacity .15s;
-    }
-    .btn:hover { opacity: .85; }
-    .btn-primary { background: #0071e3; color: #fff; }
-    .btn-danger  { background: #ff3b30; color: #fff; padding: .3rem .7rem; font-size: .8rem; }
-    .btn-sm      { padding: .3rem .7rem; font-size: .8rem; }
-
-    /* ── Table ── */
-    .table-card { background: #fff; border-radius: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }
-    .table-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.5rem; }
-    .table-header h2 { font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; color: #6e6e73; }
-    .filter-row { display: flex; gap: .5rem; }
-    .filter-row select { padding: .4rem .7rem; border: 1px solid #d1d1d6; border-radius: 8px; font-size: .85rem; }
-
-    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-    thead th {
-      background: #f5f5f7;
-      padding: .65rem 1rem;
-      text-align: left;
-      font-size: .78rem;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      color: #6e6e73;
-      white-space: nowrap;
-    }
-    tbody tr { border-top: 1px solid #f0f0f5; }
-    tbody tr:hover { background: #fafafe; }
-    tbody td { padding: .65rem 1rem; vertical-align: middle; }
-    .amount { font-variant-numeric: tabular-nums; text-align: right; }
-    .amount.neg { color: #ff3b30; }
-    .amount.pos { color: #30d158; }
-    .badge {
-      display: inline-block;
-      padding: .15rem .55rem;
-      border-radius: 20px;
-      font-size: .75rem;
-      background: #e8e8ed;
-      color: #444;
-    }
-    .actions { display: flex; gap: .4rem; }
-    .empty { text-align: center; padding: 3rem; color: #aaa; }
-
-    /* ── NAS banners ── */
-    .nas-banner {
-      display: none;
-      padding: .7rem 2rem;
-      font-size: .85rem;
-      font-weight: 500;
-      align-items: center;
-      gap: 1rem;
-    }
-    .nas-banner.visible { display: flex; }
-    #nasBanner.offline  { background: #fff3cd; color: #7d4e00; border-bottom: 1px solid #f5d97e; }
-    #nasBanner.synced   { background: #d1f4e0; color: #1a5c33; border-bottom: 1px solid #9fe5bc; }
-    #lockBanner         { background: #fff0f0; color: #7d0000; border-bottom: 2px solid #ffb3b3; flex-wrap: wrap; gap: .5rem; }
-    #lockBanner .lock-actions { display: flex; gap: .5rem; margin-left: auto; }
-    .btn-warn    { background: #ff3b30; color: #fff; }
-    .btn-neutral { background: #e8e8ed; color: #1d1d1f; }
-
-    /* ── Header sync button ── */
-    header { justify-content: space-between; }
-    .header-left { display: flex; align-items: center; gap: 1rem; }
-    #syncNowBtn { margin-left: auto; }
+    /* Bootstrap has no tabular-nums utility */
+    .amount { font-variant-numeric: tabular-nums; }
   </style>
 </head>
-<body>
+<body class="bg-light">
 
-<header>
-  <div class="header-left">
-    <h1>Faresight</h1>
-    <span>local expense tracker</span>
+<nav class="navbar navbar-dark bg-dark px-4">
+  <div class="d-flex align-items-center gap-3">
+    <span class="navbar-brand fw-bold mb-0 h1">Faresight</span>
+    <span class="text-white-50 small">local expense tracker</span>
   </div>
   <button id="syncNowBtn" class="btn btn-primary btn-sm" onclick="syncNow()">Sync now</button>
-</header>
-<div id="lockBanner" class="nas-banner">
-  <span id="lockMsg"></span>
-  <div class="lock-actions">
-    <button class="btn btn-warn btn-sm" onclick="proceedAnyway()">Proceed anyway</button>
-    <button class="btn btn-neutral btn-sm" onclick="goOffline()">Work offline</button>
+</nav>
+
+<div id="lockBanner" class="alert alert-danger d-none d-flex align-items-center gap-3 mb-0 rounded-0 border-0 border-bottom border-danger px-4 py-2" role="alert">
+  <span id="lockMsg" class="me-auto small fw-medium"></span>
+  <div class="d-flex gap-2">
+    <button class="btn btn-danger btn-sm" onclick="proceedAnyway()">Proceed anyway</button>
+    <button class="btn btn-secondary btn-sm" onclick="goOffline()">Work offline</button>
   </div>
 </div>
-<div id="nasBanner" class="nas-banner"></div>
 
-<main>
+<div id="nasBanner" class="alert d-none d-flex align-items-center mb-0 rounded-0 border-0 border-bottom px-4 py-2 small fw-medium" role="alert"></div>
+
+<main class="container-lg my-4 px-3">
 
   <!-- Charts -->
-  <div class="charts">
-    <div class="card">
-      <h2>Spending by Category</h2>
-      <div class="chart-wrap"><canvas id="catChart"></canvas></div>
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h2 class="h6 text-uppercase text-muted fw-semibold mb-3">Spending by Category</h2>
+          <div class="chart-wrap"><canvas id="catChart"></canvas></div>
+        </div>
+      </div>
     </div>
-    <div class="card">
-      <h2>Monthly Spending</h2>
-      <div class="chart-wrap"><canvas id="monthChart"></canvas></div>
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <h2 class="h6 text-uppercase text-muted fw-semibold mb-3">Monthly Spending</h2>
+          <div class="chart-wrap"><canvas id="monthChart"></canvas></div>
+        </div>
+      </div>
     </div>
   </div>
 
   <!-- Add transaction -->
-  <div class="form-card">
-    <h2>Add Transaction</h2>
-    <form id="addForm">
-      <input type="date" name="date" required />
-      <input type="text" name="description" placeholder="Description" required />
-      <input type="number" name="amount" placeholder="Amount (negative = expense)" step="0.01" required />
-      <input type="text" name="category" placeholder="Category" required list="catList" />
-      <datalist id="catList"></datalist>
-      <input type="text" name="source" placeholder="Source (e.g. credit card)" />
-      <textarea name="note" placeholder="Note (optional)"></textarea>
-      <button type="submit" class="btn btn-primary">Add</button>
-    </form>
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h2 class="h6 text-uppercase text-muted fw-semibold mb-3">Add Transaction</h2>
+      <form id="addForm">
+        <div class="row g-2">
+          <div class="col-sm-6 col-md-4 col-lg-2">
+            <input type="date" name="date" class="form-control" required />
+          </div>
+          <div class="col-sm-6 col-md-4 col-lg-3">
+            <input type="text" name="description" class="form-control" placeholder="Description" required />
+          </div>
+          <div class="col-sm-6 col-md-4 col-lg-2">
+            <input type="number" name="amount" class="form-control" placeholder="Amount (negative = expense)" step="0.01" required />
+          </div>
+          <div class="col-sm-6 col-md-4 col-lg-2">
+            <input type="text" name="category" class="form-control" placeholder="Category" required list="catList" />
+            <datalist id="catList"></datalist>
+          </div>
+          <div class="col-sm-6 col-md-4 col-lg-2">
+            <input type="text" name="source" class="form-control" placeholder="Source (e.g. credit card)" />
+          </div>
+          <div class="col-12">
+            <textarea name="note" class="form-control" placeholder="Note (optional)" rows="2"></textarea>
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-primary">Add</button>
+          </div>
+        </div>
+      </form>
+    </div>
   </div>
 
   <!-- Transaction table -->
-  <div class="table-card">
-    <div class="table-header">
-      <h2>Transactions</h2>
-      <div class="filter-row">
-        <select id="catFilter"><option value="">All categories</option></select>
-      </div>
+  <div class="card shadow-sm">
+    <div class="card-header d-flex align-items-center justify-content-between py-3">
+      <h2 class="h6 text-uppercase text-muted fw-semibold mb-0">Transactions</h2>
+      <select id="catFilter" class="form-select form-select-sm w-auto">
+        <option value="">All categories</option>
+      </select>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Description</th>
-          <th>Category</th>
-          <th>Source</th>
-          <th class="amount">Amount</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="txBody">
-        <tr><td colspan="6" class="empty">Loading…</td></tr>
-      </tbody>
-    </table>
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th class="text-uppercase text-muted small fw-semibold">Date</th>
+            <th class="text-uppercase text-muted small fw-semibold">Description</th>
+            <th class="text-uppercase text-muted small fw-semibold">Category</th>
+            <th class="text-uppercase text-muted small fw-semibold">Source</th>
+            <th class="text-uppercase text-muted small fw-semibold amount text-end">Amount</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="txBody">
+          <tr><td colspan="6" class="text-center text-muted py-5">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
 </main>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 // ── API helpers ───────────────────────────────────────────────────────────────
 const api = async (path, opts = {}) => {
@@ -211,6 +130,9 @@ const api = async (path, opts = {}) => {
 // ── State ─────────────────────────────────────────────────────────────────────
 let catChart, monthChart;
 let categoryFilter = '';
+
+// Base classes always present on the NAS status banner when visible.
+const NAS_BASE = 'alert d-flex align-items-center mb-0 rounded-0 border-0 border-bottom px-4 py-2 small fw-medium';
 
 // ── Charts ────────────────────────────────────────────────────────────────────
 async function refreshCharts() {
@@ -250,7 +172,6 @@ async function refreshCategories() {
   const filter = document.getElementById('catFilter');
   const datalist = document.getElementById('catList');
 
-  // Keep current selection
   const prev = filter.value;
   filter.innerHTML = '<option value="">All categories</option>';
   datalist.innerHTML = '';
@@ -268,22 +189,21 @@ async function refreshTable() {
   const tbody = document.getElementById('txBody');
 
   if (!txs.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">No transactions yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">No transactions yet.</td></tr>';
     return;
   }
 
   tbody.innerHTML = txs.map(t => {
     const neg = t.amount < 0;
-    const amtClass = neg ? 'neg' : 'pos';
     const amtStr = (neg ? '-' : '+') + '$' + Math.abs(t.amount).toFixed(2);
     return `<tr>
       <td>${t.date}</td>
-      <td>${esc(t.description)}${t.note ? `<br><small style="color:#aaa">${esc(t.note)}</small>` : ''}</td>
-      <td><span class="badge">${esc(t.category)}</span></td>
+      <td>${esc(t.description)}${t.note ? `<br><small class="text-muted">${esc(t.note)}</small>` : ''}</td>
+      <td><span class="badge bg-secondary text-dark">${esc(t.category)}</span></td>
       <td>${t.source ? esc(t.source) : '—'}</td>
-      <td class="amount ${amtClass}">${amtStr}</td>
-      <td class="actions">
-        <button class="btn btn-danger" onclick="deleteTx(${t.id})">Del</button>
+      <td class="amount text-end ${neg ? 'text-danger' : 'text-success'}">${amtStr}</td>
+      <td class="d-flex gap-1">
+        <button class="btn btn-danger btn-sm" onclick="deleteTx(${t.id})">Del</button>
       </td>
     </tr>`;
   }).join('');
@@ -330,28 +250,26 @@ async function refreshNasBanner() {
     const nasBanner  = document.getElementById('nasBanner');
     const lockBanner = document.getElementById('lockBanner');
 
-    // Lock-conflict banner (takes priority)
     if (s.lock_warning) {
       document.getElementById('lockMsg').textContent =
         `Database may be in use on "${s.lock_warning}". Proceeding will sync your local copy and may overwrite their recent changes.`;
-      lockBanner.classList.add('visible');
-      nasBanner.classList.remove('visible');
+      lockBanner.classList.remove('d-none');
+      nasBanner.classList.add('d-none');
       return;
     }
-    lockBanner.classList.remove('visible');
+    lockBanner.classList.add('d-none');
 
-    // Offline / pull-update banner
     if (s.reachable === false) {
-      nasBanner.className = 'nas-banner visible offline';
+      nasBanner.className = NAS_BASE + ' alert-warning';
       nasBanner.textContent = 'NAS share unreachable — running on local copy. Changes will not be synced.';
     } else if (s.last_action === 'pulled_update') {
-      nasBanner.className = 'nas-banner visible synced';
+      nasBanner.className = NAS_BASE + ' alert-success';
       nasBanner.textContent = `NAS sync: pulled latest data from NAS (updated ${s.detail}).`;
     } else if (s.last_action === 'pushed_update' && s.last_push) {
-      nasBanner.className = 'nas-banner visible synced';
+      nasBanner.className = NAS_BASE + ' alert-success';
       nasBanner.textContent = `NAS sync: pushed to NAS at ${s.last_push}.`;
     } else {
-      nasBanner.className = 'nas-banner';
+      nasBanner.className = NAS_BASE + ' d-none';
     }
   } catch (_) {
     // status endpoint unavailable — silently skip banners
@@ -379,7 +297,7 @@ async function proceedAnyway() {
 
 async function goOffline() {
   await api('/api/sync/go-offline', { method: 'POST' });
-  document.getElementById('lockBanner').classList.remove('visible');
+  document.getElementById('lockBanner').classList.add('d-none');
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
@@ -387,7 +305,6 @@ async function refreshAll() {
   await Promise.all([refreshCharts(), refreshCategories(), refreshTable()]);
 }
 
-// Set today's date as default
 document.querySelector('input[name=date]').valueAsDate = new Date();
 
 refreshNasBanner();
