@@ -21,9 +21,17 @@ faresight/
 │   ├── models.py      # Transaction ORM model
 │   ├── schemas.py     # Pydantic request/response schemas
 │   ├── config.py      # Reads config.yaml into typed constants
-│   └── nas.py         # Placeholder for NAS sync logic (not yet implemented)
+│   ├── nas.py         # NAS sync stubs (not yet implemented)
+│   └── sync.py        # NAS sync implementation (startup pull, periodic push, lock file)
 ├── frontend/
-│   └── index.html     # Dashboard: Bootstrap 5.3 UI; add/delete transactions, pie + bar charts
+│   ├── assets/
+│   │   ├── css/
+│   │   │   └── app.css       # Custom CSS (chart container height, tabular-nums)
+│   │   └── scripts/
+│   │       └── app.js        # All frontend JavaScript
+│   └── app/
+│       └── pages/
+│           └── index.html    # Dashboard HTML (Bootstrap 5.3 + Chart.js via CDN)
 ├── config.yaml        # App configuration
 └── requirements.txt
 ```

@@ -39,7 +39,7 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 @app.get("/", response_class=FileResponse)
 def root():
-    return FileResponse(FRONTEND_DIR / "index.html")
+    return FileResponse(FRONTEND_DIR / "app" / "pages" / "index.html")
 
 
 # ── Transactions CRUD ─────────────────────────────────────────────────────────

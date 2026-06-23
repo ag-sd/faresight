@@ -1,0 +1,5 @@
+/* Chart.js requires an explicit container height */
+.chart-wrap { position: relative; height: 220px; }
+
+/* Bootstrap has no tabular-nums utility */
+.amount { font-variant-numeric: tabular-nums; }

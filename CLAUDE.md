@@ -40,9 +40,11 @@ HTML/JS frontend with Chart.js.
 - `app/database.py` — creates the SQLAlchemy engine from `LOCAL_DB_PATH`; auto-creates the parent directory
 - `app/models.py` — `Transaction` table
 - `app/schemas.py` — Pydantic schemas for request/response
-- `app/faresight.py` — all routes; serves `frontend/index.html` at `/`
+- `app/faresight.py` — all routes; serves `frontend/app/pages/index.html` at `/`
 - `app/nas.py` — stub only; raises `NotImplementedError`
-- `frontend/index.html` — single-file dashboard; Bootstrap 5.3 + Chart.js 4; no separate CSS/JS files
+- `frontend/assets/css/app.css` — custom CSS (chart container height, tabular-nums)
+- `frontend/assets/scripts/app.js` — all frontend JavaScript (API helpers, charts, forms, NAS banners)
+- `frontend/app/pages/index.html` — dashboard HTML; Bootstrap 5.3 + Chart.js 4 via CDN; references `/static/assets/`
 
 ## Development rules
 
