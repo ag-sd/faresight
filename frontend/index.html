@@ -102,24 +102,46 @@
     .actions { display: flex; gap: .4rem; }
     .empty { text-align: center; padding: 3rem; color: #aaa; }
 
-    /* ── NAS banner ── */
-    #nasBanner {
+    /* ── NAS banners ── */
+    .nas-banner {
       display: none;
-      padding: .65rem 2rem;
+      padding: .7rem 2rem;
       font-size: .85rem;
       font-weight: 500;
+      align-items: center;
+      gap: 1rem;
     }
+    .nas-banner.visible { display: flex; }
     #nasBanner.offline  { background: #fff3cd; color: #7d4e00; border-bottom: 1px solid #f5d97e; }
     #nasBanner.synced   { background: #d1f4e0; color: #1a5c33; border-bottom: 1px solid #9fe5bc; }
+    #lockBanner         { background: #fff0f0; color: #7d0000; border-bottom: 2px solid #ffb3b3; flex-wrap: wrap; gap: .5rem; }
+    #lockBanner .lock-actions { display: flex; gap: .5rem; margin-left: auto; }
+    .btn-warn    { background: #ff3b30; color: #fff; }
+    .btn-neutral { background: #e8e8ed; color: #1d1d1f; }
+
+    /* ── Header sync button ── */
+    header { justify-content: space-between; }
+    .header-left { display: flex; align-items: center; gap: 1rem; }
+    #syncNowBtn { margin-left: auto; }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>Faresight</h1>
-  <span>local expense tracker</span>
+  <div class="header-left">
+    <h1>Faresight</h1>
+    <span>local expense tracker</span>
+  </div>
+  <button id="syncNowBtn" class="btn btn-primary btn-sm" onclick="syncNow()">Sync now</button>
 </header>
-<div id="nasBanner"></div>
+<div id="lockBanner" class="nas-banner">
+  <span id="lockMsg"></span>
+  <div class="lock-actions">
+    <button class="btn btn-warn btn-sm" onclick="proceedAnyway()">Proceed anyway</button>
+    <button class="btn btn-neutral btn-sm" onclick="goOffline()">Work offline</button>
+  </div>
+</div>
+<div id="nasBanner" class="nas-banner"></div>
 
 <main>
 
@@ -301,25 +323,63 @@ document.getElementById('catFilter').addEventListener('change', async e => {
   await refreshTable();
 });
 
-// ── NAS status banner ─────────────────────────────────────────────────────────
+// ── NAS status banners ────────────────────────────────────────────────────────
 async function refreshNasBanner() {
   try {
     const s = await api('/api/sync/status');
-    const banner = document.getElementById('nasBanner');
+    const nasBanner  = document.getElementById('nasBanner');
+    const lockBanner = document.getElementById('lockBanner');
+
+    // Lock-conflict banner (takes priority)
+    if (s.lock_warning) {
+      document.getElementById('lockMsg').textContent =
+        `Database may be in use on "${s.lock_warning}". Proceeding will sync your local copy and may overwrite their recent changes.`;
+      lockBanner.classList.add('visible');
+      nasBanner.classList.remove('visible');
+      return;
+    }
+    lockBanner.classList.remove('visible');
+
+    // Offline / pull-update banner
     if (s.reachable === false) {
-      banner.className = 'offline';
-      banner.textContent = 'NAS share unreachable — running on local copy. Changes will not be synced.';
-      banner.style.display = 'block';
+      nasBanner.className = 'nas-banner visible offline';
+      nasBanner.textContent = 'NAS share unreachable — running on local copy. Changes will not be synced.';
     } else if (s.last_action === 'pulled_update') {
-      banner.className = 'synced';
-      banner.textContent = `NAS sync: pulled latest data from NAS (updated ${s.detail}).`;
-      banner.style.display = 'block';
+      nasBanner.className = 'nas-banner visible synced';
+      nasBanner.textContent = `NAS sync: pulled latest data from NAS (updated ${s.detail}).`;
+    } else if (s.last_action === 'pushed_update' && s.last_push) {
+      nasBanner.className = 'nas-banner visible synced';
+      nasBanner.textContent = `NAS sync: pushed to NAS at ${s.last_push}.`;
     } else {
-      banner.style.display = 'none';
+      nasBanner.className = 'nas-banner';
     }
   } catch (_) {
-    // status endpoint unavailable — silently skip banner
+    // status endpoint unavailable — silently skip banners
   }
+}
+
+// ── Sync actions ──────────────────────────────────────────────────────────────
+async function syncNow() {
+  const btn = document.getElementById('syncNowBtn');
+  btn.disabled = true;
+  btn.textContent = 'Syncing…';
+  try {
+    await api('/api/sync', { method: 'POST' });
+    await refreshNasBanner();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sync now';
+  }
+}
+
+async function proceedAnyway() {
+  await api('/api/sync', { method: 'POST' });
+  await refreshNasBanner();
+}
+
+async function goOffline() {
+  await api('/api/sync/go-offline', { method: 'POST' });
+  document.getElementById('lockBanner').classList.remove('visible');
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

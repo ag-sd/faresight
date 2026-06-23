@@ -116,9 +116,25 @@ file at the time of the last sync. This is how "newer" is determined.
 The sync status is exposed at `GET /api/sync/status` and shown as a banner in the UI
 when the NAS is unreachable or when a fresh pull happened.
 
+## Sync lifecycle
+
+| Trigger | Action |
+|---------|--------|
+| App startup | Pull from NAS (if newer), write lock file |
+| Every `sync_interval_minutes` | Push local → NAS via background asyncio loop |
+| App shutdown (SIGINT/SIGTERM) | Final push, release lock file |
+| "Sync now" button | POST `/api/sync` → immediate push |
+
+Lock file (`<nas_share_path>.lock`) contains `{hostname, timestamp}`. If another
+machine's lock is fresher than `sync_interval_minutes`, the UI shows:
+
+> "Database may be in use on \<hostname\>. Proceeding will sync your local copy
+> and may overwrite their recent changes."
+
+[Proceed anyway] pushes and claims the lock. [Work offline] disables NAS sync
+for the session.
+
 ## Roadmap
 
-- [ ] Background sync on interval (`sync_interval_minutes` from config)
-- [ ] Sync to NAS on shutdown (`sync_on_shutdown` from config)
 - [ ] CSV import
 - [ ] Date-range filtering

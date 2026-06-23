@@ -1,6 +1,7 @@
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Optional
+import asyncio
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -11,14 +12,21 @@ from sqlalchemy.orm import Session
 from app.database import Base, engine, get_db
 from app.models import Transaction
 from app.schemas import TransactionCreate, TransactionOut, TransactionUpdate
-from app.sync import get_status, sync_from_nas
+import app.sync as sync_mod
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
-    sync_from_nas()
+    sync_mod.sync_from_nas()
+    task = asyncio.create_task(sync_mod._periodic_sync_loop())
     yield
+    # Graceful shutdown: cancel loop, push final copy, release lock.
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+    sync_mod.sync_to_nas()
+    sync_mod._release_lock()
 
 
 app = FastAPI(title="Faresight — Expense Tracker", lifespan=lifespan)
@@ -123,8 +131,22 @@ def list_categories(db: Session = Depends(get_db)):
     return sorted(r.category for r in rows)
 
 
-# ── Sync status ───────────────────────────────────────────────────────────────
+# ── Sync endpoints ────────────────────────────────────────────────────────────
 
 @app.get("/api/sync/status")
 def sync_status():
-    return get_status()
+    return sync_mod.get_status()
+
+
+@app.post("/api/sync")
+def push_sync():
+    """Push local DB to NAS immediately. Also used for 'Proceed anyway' on lock conflict."""
+    sync_mod.sync_to_nas()
+    return sync_mod.get_status()
+
+
+@app.post("/api/sync/go-offline")
+def go_offline():
+    """Disable NAS sync for this session ('Work offline' on lock conflict)."""
+    sync_mod.disable_sync()
+    return sync_mod.get_status()

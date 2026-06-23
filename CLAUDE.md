@@ -60,27 +60,47 @@ frontend with Chart.js. No NAS sync yet — that is a planned future step.
 - Run: `uvicorn app.faresight:app --reload`
 - DB is created automatically at `~/.local/share/expense-tracker/local.db`
 
-## NAS sync (`app/sync.py`)
+## NAS sync (`app/sync.py`) — full lifecycle
 
 `sync_from_nas()` runs once at startup (inside the FastAPI lifespan, before requests).
 It is synchronous — no threads, no scheduler.
 
-Decision tree:
-1. NAS dir unreachable → warn, continue offline; `_status["reachable"] = False`
-2. NAS file absent → push local DB up (first run); `last_action = "pushed_initial"`
-3. NAS mtime > marker → backup local to `.db.bak`, pull NAS down, update marker; `last_action = "pulled_update"`
-4. Local is current → skip; `last_action = "skipped_current"`
+**Startup — `sync_from_nas()`** (called in lifespan before requests):
+1. NAS dir unreachable → warn, continue offline; `reachable = False`
+2. Foreign active lock → set `lock_warning = <hostname>`, skip pull; user confirms via POST /api/sync
+3. NAS file absent → push local DB up (first run); `last_action = "pushed_initial"`
+4. NAS mtime > marker → backup local to `.db.bak`, pull NAS down; `last_action = "pulled_update"`
+5. Local current → skip; `last_action = "skipped_current"`
+6. After any successful sync → write `.lock` file claiming ownership
 
-Marker file: `local_db_path + ".synced_at"` — stores the float mtime of the NAS file at the time of last sync.
+**Push — `sync_to_nas()`** — called by:
+- Background asyncio loop every `sync_interval_minutes`
+- Graceful shutdown (after loop is cancelled)
+- `POST /api/sync` (Sync Now / Proceed Anyway buttons)
 
-GET `/api/sync/status` returns `_status` dict — used by the frontend to show/hide the NAS banner.
+**Lock file** — `<nas_share_path>.lock` (JSON: `{hostname, timestamp}`):
+- Written after every successful sync to claim ownership
+- Fresh = age < `sync_interval_minutes * 60` seconds
+- Stale locks are silently ignored
+- Released on shutdown (`_release_lock()`) — only if hostname matches ours
 
-In tests, monkeypatch `app.sync.NAS_SHARE_PATH` and `app.sync.LOCAL_DB_PATH` with `tmp_path` values.
-The `reset_status` fixture in `tests/test_sync.py` is `autouse=True` and resets `_status` between tests.
+**`_status` keys:** `reachable`, `last_action`, `detail`, `lock_warning`, `last_push`, `sync_enabled`
+
+**API:**
+- `GET /api/sync/status` — returns `_status`
+- `POST /api/sync` — push now (also used for "Proceed anyway")
+- `POST /api/sync/go-offline` — disables NAS sync for this session
+
+**Frontend banners:**
+- Lock conflict → red banner with [Proceed anyway] / [Work offline]
+- NAS unreachable → yellow banner
+- Pull / push success → green banner
+- "Sync now" button always visible in the header
+
+In tests, monkeypatch `app.sync.NAS_SHARE_PATH`, `app.sync.LOCAL_DB_PATH`, `app.sync._OWN_HOSTNAME`, and `app.sync.SYNC_INTERVAL_MINUTES`.
+The `autouse=True` `reset_status` fixture in `tests/test_sync.py` resets all six `_status` fields between tests.
 
 ## What is NOT implemented yet
 
-- Background sync on interval (`sync_interval_minutes` from config)
-- Sync on shutdown (`sync_on_shutdown` from config)
 - CSV import
 - Date-range filtering on the transactions endpoint
