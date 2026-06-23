@@ -1,24 +1,15 @@
-// ── API helpers ───────────────────────────────────────────────────────────────
-const api = async (path, opts = {}) => {
-  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
-  if (!res.ok) throw new Error(await res.text());
-  if (res.status === 204) return null;
-  return res.json();
-};
-
 // ── State ─────────────────────────────────────────────────────────────────────
 let catChart, monthChart;
 let categoryFilter = '';
 
-const NAS_BASE = 'alert d-flex align-items-center mb-0 rounded-0 border-0 border-bottom px-4 py-2 small fw-medium';
-
-// ── Banks ─────────────────────────────────────────────────────────────────────
-async function refreshBanks() {
-  const banks = await api('/api/banks');
-  const select = document.getElementById('bankSelect');
-  select.innerHTML = '<option value="">Select bank…</option>';
-  banks.forEach(b => {
-    select.insertAdjacentHTML('beforeend', `<option value="${esc(b)}">${esc(b)}</option>`);
+// ── Account select (Import CSV) ───────────────────────────────────────────────
+async function refreshAccountSelect() {
+  const accounts = await api('/api/accounts');
+  const select = document.getElementById('accountSelect');
+  select.innerHTML = '<option value="">Select account…</option>';
+  accounts.filter(a => a.is_active).forEach(a => {
+    select.insertAdjacentHTML('beforeend',
+      `<option value="${a.id}">${esc(a.nickname)} (${esc(a.name)})</option>`);
   });
 }
 
@@ -29,9 +20,9 @@ document.getElementById('importForm').addEventListener('submit', async e => {
   resultDiv.className = 'mt-3 d-none';
 
   const fd = new FormData(e.target);
-  let res, result;
+  let result;
   try {
-    res = await fetch('/api/transactions/import', { method: 'POST', body: fd });
+    const res = await fetch('/api/transactions/import', { method: 'POST', body: fd });
     result = await res.json();
   } catch (err) {
     resultDiv.className = 'mt-3 alert alert-danger';
@@ -128,11 +119,6 @@ async function refreshTable() {
   }).join('');
 }
 
-function esc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-// ── Delete ────────────────────────────────────────────────────────────────────
 async function deleteTx(id) {
   if (!confirm('Delete this transaction?')) return;
   await api(`/api/transactions/${id}`, { method: 'DELETE' });
@@ -162,70 +148,11 @@ document.getElementById('catFilter').addEventListener('change', async e => {
   await refreshTable();
 });
 
-// ── NAS status banners ────────────────────────────────────────────────────────
-async function refreshNasBanner() {
-  try {
-    const s = await api('/api/sync/status');
-    const nasBanner  = document.getElementById('nasBanner');
-    const lockBanner = document.getElementById('lockBanner');
-
-    if (s.lock_warning) {
-      document.getElementById('lockMsg').textContent =
-        `Database may be in use on "${s.lock_warning}". Proceeding will sync your local copy and may overwrite their recent changes.`;
-      lockBanner.classList.remove('d-none');
-      nasBanner.classList.add('d-none');
-      return;
-    }
-    lockBanner.classList.add('d-none');
-
-    if (s.reachable === false) {
-      nasBanner.className = NAS_BASE + ' alert-warning';
-      nasBanner.textContent = 'NAS share unreachable — running on local copy. Changes will not be synced.';
-    } else if (s.last_action === 'pulled_update') {
-      nasBanner.className = NAS_BASE + ' alert-success';
-      nasBanner.textContent = `NAS sync: pulled latest data from NAS (updated ${s.detail}).`;
-    } else if (s.last_action === 'pushed_update' && s.last_push) {
-      nasBanner.className = NAS_BASE + ' alert-success';
-      nasBanner.textContent = `NAS sync: pushed to NAS at ${s.last_push}.`;
-    } else {
-      nasBanner.className = NAS_BASE + ' d-none';
-    }
-  } catch (_) {
-    // status endpoint unavailable — silently skip banners
-  }
-}
-
-// ── Sync actions ──────────────────────────────────────────────────────────────
-async function syncNow() {
-  const btn = document.getElementById('syncNowBtn');
-  btn.disabled = true;
-  btn.textContent = 'Syncing…';
-  try {
-    await api('/api/sync', { method: 'POST' });
-    await refreshNasBanner();
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Sync now';
-  }
-}
-
-async function proceedAnyway() {
-  await api('/api/sync', { method: 'POST' });
-  await refreshNasBanner();
-}
-
-async function goOffline() {
-  await api('/api/sync/go-offline', { method: 'POST' });
-  document.getElementById('lockBanner').classList.add('d-none');
-}
-
 // ── Boot ──────────────────────────────────────────────────────────────────────
 async function refreshAll() {
   await Promise.all([refreshCharts(), refreshCategories(), refreshTable()]);
 }
 
 document.querySelector('input[name=date]').valueAsDate = new Date();
-
-refreshBanks();
-refreshNasBanner();
+refreshAccountSelect();
 refreshAll();

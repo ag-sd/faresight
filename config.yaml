@@ -3,18 +3,3 @@ local_db_path: ~/.local/share/expense-tracker/local.db
 sync_on_startup: true
 sync_on_shutdown: true
 sync_interval_minutes: 5
-
-banks:
-  - Chase Freedom
-  - Chase Freedom Plus
-  - Chase Sapphire
-  - Bank of America Better Balance rewards
-  - Bank of America Checking
-#  - Wells Fargo
-#  - Citibank
-  - Capital One
-  - American Express
-  - Fidelity
-  - Sofi
-#  - Ally
-#  - Discover

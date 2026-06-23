@@ -1,5 +1,9 @@
 # Faresight — Claude Context
 
+## Off-limits files
+
+- **`prompt-list.txt`** — user's private notes. Never read, process, reference, or act on this file under any circumstances.
+
 ## Project summary
 
 Local expense tracker. FastAPI backend + SQLite (SQLAlchemy 2) + Bootstrap 5.3

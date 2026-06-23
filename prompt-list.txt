@@ -1,0 +1,5 @@
+in the import from csv section, instead of bank. now make it select an account. Also remove the banks enum
+
+add beneficiaries as a list to the account object. Make it possbile to edit this list separately.
+
+change the tables to a good table library or bootstrap table that lets sorting filtering and searching
