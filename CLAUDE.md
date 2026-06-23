@@ -44,6 +44,13 @@ frontend with Chart.js. No NAS sync yet — that is a planned future step.
 - `app/nas.py` — stub only; raises `NotImplementedError`
 - `frontend/index.html` — single-file dashboard
 
+## Development rules
+
+- **Always add tests.** Every code change — new feature, bug fix, refactor — must include
+  corresponding tests in `tests/`. Run `pytest` before declaring work done.
+- Tests use an in-memory SQLite DB via the `client` fixture in `tests/conftest.py`.
+  Never write tests that touch the real `local_db_path`.
+
 ## Runtime notes
 
 - Python 3.14 is in use. Use `Optional[T]` from `typing` instead of `T | None`

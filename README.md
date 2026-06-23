@@ -77,6 +77,22 @@ Interactive docs at http://localhost:8000/docs.
 | `note`        | string   | no       |                                    |
 | `source`      | string   | no       | e.g. "Visa", "bank transfer"       |
 
+## Running tests
+
+```bash
+pytest tests/ -v
+```
+
+Tests use an in-memory SQLite database — the real local DB is never touched.
+
+| File | Covers |
+|------|--------|
+| `tests/conftest.py` | Fixtures: in-memory DB, `TestClient`, `make_tx` helper |
+| `tests/test_transactions.py` | CRUD: create, read, list, filter, patch, delete |
+| `tests/test_summary.py` | `/api/summary/by-category`, `/api/summary/by-month`, `/api/categories` |
+| `tests/test_config.py` | Config loading and type correctness |
+| `tests/test_nas.py` | NAS stub raises `NotImplementedError` |
+
 ## Roadmap
 
 - [ ] NAS sync (`app/nas.py`) — copy SQLite DB to/from NAS share
