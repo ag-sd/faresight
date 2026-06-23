@@ -32,7 +32,12 @@ faresight/
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
+# Activate — pick the line that matches your shell:
+source .venv/bin/activate           # bash / zsh
+source .venv/bin/activate.fish      # fish
+.venv\Scripts\activate              # Windows cmd/PowerShell
+
 pip install -r requirements.txt
 uvicorn app.faresight:app --reload
 ```
