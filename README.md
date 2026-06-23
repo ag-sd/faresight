@@ -98,9 +98,27 @@ Tests use an in-memory SQLite database — the real local DB is never touched.
 | `tests/test_config.py` | Config loading and type correctness |
 | `tests/test_nas.py` | NAS stub raises `NotImplementedError` |
 
+## NAS sync
+
+On startup the app calls `sync_from_nas()` (in `app/sync.py`) before serving any requests.
+It expects the Samba share to already be mounted — it will not try to mount it.
+
+| Situation | Action |
+|-----------|--------|
+| NAS dir unreachable | Warn and continue offline — a yellow banner appears in the UI |
+| NAS reachable, no DB file yet | Push local DB up to NAS (first-run bootstrap) |
+| NAS file newer than last pull | Backup `local.db` → `local.db.bak`, pull NAS copy down |
+| Local already current | Skip |
+
+A `.synced_at` marker file (stored alongside `local_db_path`) records the mtime of the NAS
+file at the time of the last sync. This is how "newer" is determined.
+
+The sync status is exposed at `GET /api/sync/status` and shown as a banner in the UI
+when the NAS is unreachable or when a fresh pull happened.
+
 ## Roadmap
 
-- [ ] NAS sync (`app/nas.py`) — copy SQLite DB to/from NAS share
-- [ ] Background sync scheduler (every N minutes)
+- [ ] Background sync on interval (`sync_interval_minutes` from config)
+- [ ] Sync to NAS on shutdown (`sync_on_shutdown` from config)
 - [ ] CSV import
 - [ ] Date-range filtering

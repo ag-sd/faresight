@@ -11,11 +11,13 @@ from sqlalchemy.orm import Session
 from app.database import Base, engine, get_db
 from app.models import Transaction
 from app.schemas import TransactionCreate, TransactionOut, TransactionUpdate
+from app.sync import get_status, sync_from_nas
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    sync_from_nas()
     yield
 
 
@@ -119,3 +121,10 @@ def summary_by_month(db: Session = Depends(get_db)):
 def list_categories(db: Session = Depends(get_db)):
     rows = db.query(Transaction.category).distinct().all()
     return sorted(r.category for r in rows)
+
+
+# ── Sync status ───────────────────────────────────────────────────────────────
+
+@app.get("/api/sync/status")
+def sync_status():
+    return get_status()

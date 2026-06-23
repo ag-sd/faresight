@@ -60,9 +60,27 @@ frontend with Chart.js. No NAS sync yet — that is a planned future step.
 - Run: `uvicorn app.faresight:app --reload`
 - DB is created automatically at `~/.local/share/expense-tracker/local.db`
 
+## NAS sync (`app/sync.py`)
+
+`sync_from_nas()` runs once at startup (inside the FastAPI lifespan, before requests).
+It is synchronous — no threads, no scheduler.
+
+Decision tree:
+1. NAS dir unreachable → warn, continue offline; `_status["reachable"] = False`
+2. NAS file absent → push local DB up (first run); `last_action = "pushed_initial"`
+3. NAS mtime > marker → backup local to `.db.bak`, pull NAS down, update marker; `last_action = "pulled_update"`
+4. Local is current → skip; `last_action = "skipped_current"`
+
+Marker file: `local_db_path + ".synced_at"` — stores the float mtime of the NAS file at the time of last sync.
+
+GET `/api/sync/status` returns `_status` dict — used by the frontend to show/hide the NAS banner.
+
+In tests, monkeypatch `app.sync.NAS_SHARE_PATH` and `app.sync.LOCAL_DB_PATH` with `tmp_path` values.
+The `reset_status` fixture in `tests/test_sync.py` is `autouse=True` and resets `_status` between tests.
+
 ## What is NOT implemented yet
 
-- `app/nas.py` — NAS sync (copy DB to/from NAS share defined in `config.yaml`)
-- Background sync scheduler
+- Background sync on interval (`sync_interval_minutes` from config)
+- Sync on shutdown (`sync_on_shutdown` from config)
 - CSV import
 - Date-range filtering on the transactions endpoint

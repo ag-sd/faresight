@@ -101,6 +101,16 @@
     }
     .actions { display: flex; gap: .4rem; }
     .empty { text-align: center; padding: 3rem; color: #aaa; }
+
+    /* ── NAS banner ── */
+    #nasBanner {
+      display: none;
+      padding: .65rem 2rem;
+      font-size: .85rem;
+      font-weight: 500;
+    }
+    #nasBanner.offline  { background: #fff3cd; color: #7d4e00; border-bottom: 1px solid #f5d97e; }
+    #nasBanner.synced   { background: #d1f4e0; color: #1a5c33; border-bottom: 1px solid #9fe5bc; }
   </style>
 </head>
 <body>
@@ -109,6 +119,7 @@
   <h1>Faresight</h1>
   <span>local expense tracker</span>
 </header>
+<div id="nasBanner"></div>
 
 <main>
 
@@ -290,6 +301,27 @@ document.getElementById('catFilter').addEventListener('change', async e => {
   await refreshTable();
 });
 
+// ── NAS status banner ─────────────────────────────────────────────────────────
+async function refreshNasBanner() {
+  try {
+    const s = await api('/api/sync/status');
+    const banner = document.getElementById('nasBanner');
+    if (s.reachable === false) {
+      banner.className = 'offline';
+      banner.textContent = 'NAS share unreachable — running on local copy. Changes will not be synced.';
+      banner.style.display = 'block';
+    } else if (s.last_action === 'pulled_update') {
+      banner.className = 'synced';
+      banner.textContent = `NAS sync: pulled latest data from NAS (updated ${s.detail}).`;
+      banner.style.display = 'block';
+    } else {
+      banner.style.display = 'none';
+    }
+  } catch (_) {
+    // status endpoint unavailable — silently skip banner
+  }
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 async function refreshAll() {
   await Promise.all([refreshCharts(), refreshCategories(), refreshTable()]);
@@ -298,6 +330,7 @@ async function refreshAll() {
 // Set today's date as default
 document.querySelector('input[name=date]').valueAsDate = new Date();
 
+refreshNasBanner();
 refreshAll();
 </script>
 </body>
