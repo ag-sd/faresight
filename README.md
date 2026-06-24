@@ -47,33 +47,30 @@ source .venv/bin/activate.fish      # fish
 .venv\Scripts\activate              # Windows cmd/PowerShell
 
 pip install -r requirements.txt
-uvicorn app.faresight:app --reload
 ```
 
-Open http://localhost:8000 in your browser.
+Then use the dev script (works from bash, fish, or zsh):
 
-## Stopping and restarting
-
-**Foreground (default):**
 ```bash
-# Stop
-Ctrl+C
-
-# Restart
-uvicorn app.faresight:app --reload
+./dev.sh start    # launch in the background → http://localhost:8000
+./dev.sh stop     # graceful shutdown
+./dev.sh status   # check if it's running
 ```
 
-**Background process:**
-```bash
-# Find the PID
-lsof -ti tcp:8000
+Logs are written to `.dev.log` in the project root.
 
-# Stop it
-kill $(lsof -ti tcp:8000)
+## Dev script
 
-# Restart
-uvicorn app.faresight:app --reload &
-```
+`dev.sh` manages the app as a background process and works from any shell.
+
+| Command | Action |
+|---------|--------|
+| `./dev.sh start` | Start uvicorn in the background, write PID to `.dev.pid` |
+| `./dev.sh stop` | Send SIGTERM to the running process |
+| `./dev.sh status` | Print whether the app is running and its PID |
+
+The script calls `.venv/bin/uvicorn` directly — no `source activate` required. If the
+virtualenv is missing it prints the right activation command for your shell.
 
 **After editing `config.yaml`** (e.g. adding banks), a full restart is required — `--reload` only watches `.py` files.
 
