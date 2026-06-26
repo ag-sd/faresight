@@ -5,10 +5,10 @@ def _csv(rows: str) -> tuple:
     return ("test.csv", io.BytesIO(rows.encode()), "text/csv")
 
 
-def _make_account(client, nickname="Test Bank"):
+def _make_account(client, name="Test Account"):
     r = client.post("/api/accounts", json={
-        "name": "Test Bank",
-        "nickname": nickname,
+        "bank": "Test Bank",
+        "name": name,
         "account_number": "1234",
         "account_type": "checking",
     })
@@ -31,8 +31,8 @@ def test_import_minimal_csv(client):
     assert body["errors"] == []
 
 
-def test_import_sets_source_to_account_nickname(client):
-    acct_id = _make_account(client, nickname="My Chase Card")
+def test_import_sets_source_to_account_name(client):
+    acct_id = _make_account(client, name="My Chase Card")
     csv_data = "date,description,amount\n2024-01-15,Coffee,-4.50\n"
     client.post(
         "/api/transactions/import",

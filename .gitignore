@@ -40,6 +40,9 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Dev server runtime files
+.dev.pid
+
 # Logs
 *.log
 

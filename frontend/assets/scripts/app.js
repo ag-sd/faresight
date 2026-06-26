@@ -1,6 +1,59 @@
 // ── State ─────────────────────────────────────────────────────────────────────
-let catChart, monthChart;
-let categoryFilter = '';
+let catChart, monthChart, txTable;
+
+// ── Tabulator: transactions ───────────────────────────────────────────────────
+function initTxTable() {
+  txTable = new Tabulator('#txTable', {
+    data: [],
+    layout: 'fitColumns',
+    movableColumns: true,
+    initialSort: [{ column: 'date', dir: 'desc' }],
+    columns: [
+      {
+        title: 'Date', field: 'date', sorter: 'date',
+        headerFilter: 'input', width: 120,
+      },
+      {
+        title: 'Description', field: 'description',
+        headerFilter: 'input', widthGrow: 3,
+        formatter: (cell) => {
+          const { description, note } = cell.getRow().getData();
+          return note
+            ? `${esc(String(description))}<br><small class="text-muted">${esc(String(note))}</small>`
+            : esc(String(description));
+        },
+      },
+      {
+        title: 'Category', field: 'category',
+        headerFilter: 'input', width: 160,
+        formatter: (cell) => {
+          const v = cell.getValue();
+          return v ? `<span class="badge bg-secondary text-dark">${esc(String(v))}</span>` : '';
+        },
+      },
+      {
+        title: 'Source', field: 'source',
+        headerFilter: 'input', widthGrow: 1,
+        formatter: (cell) => cell.getValue() ? esc(String(cell.getValue())) : '—',
+      },
+      {
+        title: 'Amount', field: 'amount', sorter: 'number',
+        headerFilter: 'input', hozAlign: 'right', cssClass: 'amount', width: 130,
+        formatter: (cell) => {
+          const val = parseFloat(cell.getValue());
+          const neg = val < 0;
+          cell.getElement().style.color = neg ? 'var(--bs-danger)' : 'var(--bs-success)';
+          return (neg ? '-' : '+') + '$' + Math.abs(val).toFixed(2);
+        },
+      },
+      {
+        title: '', headerSort: false, hozAlign: 'center', width: 72,
+        formatter: () => '<button class="btn btn-danger btn-sm">Del</button>',
+        cellClick: (_e, cell) => deleteTx(cell.getRow().getData().id),
+      },
+    ],
+  });
+}
 
 // ── Account select (Import CSV) ───────────────────────────────────────────────
 async function refreshAccountSelect() {
@@ -74,49 +127,18 @@ async function refreshCharts() {
   });
 }
 
-// ── Category filter / datalist ────────────────────────────────────────────────
+// ── Category datalist ─────────────────────────────────────────────────────────
 async function refreshCategories() {
   const cats = await api('/api/categories');
-  const filter = document.getElementById('catFilter');
   const datalist = document.getElementById('catList');
-
-  const prev = filter.value;
-  filter.innerHTML = '<option value="">All categories</option>';
   datalist.innerHTML = '';
-  cats.forEach(c => {
-    filter.insertAdjacentHTML('beforeend', `<option value="${c}">${c}</option>`);
-    datalist.insertAdjacentHTML('beforeend', `<option value="${c}">`);
-  });
-  filter.value = prev;
+  cats.forEach(c => datalist.insertAdjacentHTML('beforeend', `<option value="${c}">`));
 }
 
 // ── Transaction list ──────────────────────────────────────────────────────────
 async function refreshTable() {
-  const url = categoryFilter
-    ? `/api/transactions?category=${encodeURIComponent(categoryFilter)}`
-    : '/api/transactions';
-  const txs = await api(url);
-  const tbody = document.getElementById('txBody');
-
-  if (!txs.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">No transactions yet.</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = txs.map(t => {
-    const neg = t.amount < 0;
-    const amtStr = (neg ? '-' : '+') + '$' + Math.abs(t.amount).toFixed(2);
-    return `<tr>
-      <td>${t.date}</td>
-      <td>${esc(t.description)}${t.note ? `<br><small class="text-muted">${esc(t.note)}</small>` : ''}</td>
-      <td><span class="badge bg-secondary text-dark">${esc(t.category)}</span></td>
-      <td>${t.source ? esc(t.source) : '—'}</td>
-      <td class="amount text-end ${neg ? 'text-danger' : 'text-success'}">${amtStr}</td>
-      <td class="d-flex gap-1">
-        <button class="btn btn-danger btn-sm" onclick="deleteTx(${t.id})">Del</button>
-      </td>
-    </tr>`;
-  }).join('');
+  const txs = await api('/api/transactions');
+  txTable.setData(txs);
 }
 
 async function deleteTx(id) {
@@ -142,17 +164,12 @@ document.getElementById('addForm').addEventListener('submit', async e => {
   await refreshAll();
 });
 
-// ── Category filter ───────────────────────────────────────────────────────────
-document.getElementById('catFilter').addEventListener('change', async e => {
-  categoryFilter = e.target.value;
-  await refreshTable();
-});
-
 // ── Boot ──────────────────────────────────────────────────────────────────────
 async function refreshAll() {
   await Promise.all([refreshCharts(), refreshCategories(), refreshTable()]);
 }
 
 document.querySelector('input[name=date]').valueAsDate = new Date();
+initTxTable();
 refreshAccountSelect();
 refreshAll();

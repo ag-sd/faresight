@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.database import Base, engine
+from app.database import Base, engine, migrate_db
 from app.routers import accounts, sync, transactions
 import app.sync as sync_mod
 
@@ -14,6 +14,7 @@ import app.sync as sync_mod
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    migrate_db()
     sync_mod.sync_from_nas()
     task = asyncio.create_task(sync_mod._periodic_sync_loop())
     yield

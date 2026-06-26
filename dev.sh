@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: ./dev.sh [start|stop|status]
-# Works from any shell (bash, fish, zsh) — no venv activation needed.
+# Works from any shell (bash, fish, zsh) — shebang runs this under bash regardless.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,28 +8,12 @@ PIDFILE="$SCRIPT_DIR/.dev.pid"
 LOGFILE="$SCRIPT_DIR/.dev.log"
 UVICORN="$SCRIPT_DIR/.venv/bin/uvicorn"
 
-_detect_shell() {
-  case "${SHELL:-}" in
-    */fish) echo "fish" ;;
-    */zsh)  echo "zsh"  ;;
-    *)      echo "bash" ;;
-  esac
-}
-
-_activate_hint() {
-  case "$(_detect_shell)" in
-    fish) echo "source .venv/bin/activate.fish" ;;
-    *)    echo "source .venv/bin/activate" ;;
-  esac
-}
-
 cmd="${1:-start}"
 
 case "$cmd" in
   start)
     if [[ ! -x "$UVICORN" ]]; then
-      echo "Error: $UVICORN not found. Install dependencies first:"
-      echo "  $(_activate_hint) && pip install -r requirements.txt"
+      echo "Error: $UVICORN not found. Run 'pip install -r requirements.txt' inside .venv first."
       exit 1
     fi
     if [[ -f "$PIDFILE" ]]; then
@@ -43,8 +27,7 @@ case "$cmd" in
     echo "Starting Faresight…"
     "$UVICORN" app.faresight:app --reload >> "$LOGFILE" 2>&1 &
     echo $! > "$PIDFILE"
-    echo "Started  → http://localhost:8000  (pid $(cat "$PIDFILE"))"
-    echo "Logs     → $LOGFILE"
+    echo "Started (pid $(cat "$PIDFILE")). Logs: $LOGFILE"
     ;;
 
   stop)
@@ -66,7 +49,7 @@ case "$cmd" in
     if [[ -f "$PIDFILE" ]]; then
       pid="$(cat "$PIDFILE")"
       if kill -0 "$pid" 2>/dev/null; then
-        echo "Running (pid $pid) → http://localhost:8000"
+        echo "Running (pid $pid)."
       else
         echo "Stale pidfile (pid $pid not found). Run './dev.sh stop' to clean up."
       fi

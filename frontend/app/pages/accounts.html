@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Faresight — Accounts</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tabulator-tables@6.3.0/dist/css/tabulator_bootstrap5.min.css">
   <link rel="stylesheet" href="/static/assets/css/app.css">
 </head>
 <body class="bg-light">
@@ -84,25 +86,30 @@
     </div>
   </div>
 
-  <!-- Accounts table -->
-  <div class="card shadow-sm">
-    <div class="table-responsive">
-      <table class="table table-hover mb-0">
-        <thead class="table-light">
-          <tr>
-            <th class="text-uppercase text-muted small fw-semibold">Name</th>
-            <th class="text-uppercase text-muted small fw-semibold">Nickname</th>
-            <th class="text-uppercase text-muted small fw-semibold">Account #</th>
-            <th class="text-uppercase text-muted small fw-semibold">Type</th>
-            <th class="text-uppercase text-muted small fw-semibold">Status</th>
-            <th class="text-uppercase text-muted small fw-semibold">Notes</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="accountsBody">
-          <tr><td colspan="7" class="text-center text-muted py-5">Loading…</td></tr>
-        </tbody>
-      </table>
+  <!-- Tab nav -->
+  <ul class="nav nav-tabs mb-0" id="accountsTabNav" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="tab-accounts" data-bs-toggle="tab" data-bs-target="#pane-accounts"
+              type="button" role="tab" aria-controls="pane-accounts" aria-selected="true">Accounts</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-transfers" data-bs-toggle="tab" data-bs-target="#pane-transfers"
+              type="button" role="tab" aria-controls="pane-transfers" aria-selected="false">Transfers</button>
+    </li>
+  </ul>
+  <div class="tab-content">
+    <div class="tab-pane fade show active pt-3" id="pane-accounts" role="tabpanel" aria-labelledby="tab-accounts">
+      <div class="card shadow-sm">
+        <div id="accountsTable"></div>
+      </div>
+    </div>
+    <div class="tab-pane fade pt-3" id="pane-transfers" role="tabpanel" aria-labelledby="tab-transfers">
+      <div class="card shadow-sm">
+        <div class="card-header py-3">
+          <h2 class="h6 text-uppercase text-muted fw-semibold mb-0">Transfers</h2>
+        </div>
+        <div id="transfersTable"></div>
+      </div>
     </div>
   </div>
 
@@ -118,33 +125,66 @@
       </div>
       <div class="modal-body">
         <form id="addAccountForm" novalidate>
+          <input type="hidden" id="acctId" />
           <div class="mb-3">
-            <label class="form-label fw-medium" for="acctName">Account Name</label>
-            <input type="text" id="acctName" name="name" class="form-control" placeholder="e.g. Chase" required />
+            <label class="form-label fw-medium" for="acctName">Bank</label>
+            <input type="text" id="acctName" name="bank" class="form-control" placeholder="e.g. Chase" required />
           </div>
           <div class="mb-3">
-            <label class="form-label fw-medium" for="acctNickname">Nickname</label>
-            <input type="text" id="acctNickname" name="nickname" class="form-control" placeholder="e.g. My Chase Sapphire" required />
+            <label class="form-label fw-medium" for="acctNickname">Name</label>
+            <input type="text" id="acctNickname" name="name" class="form-control" placeholder="e.g. My Chase Sapphire" required />
           </div>
           <div class="mb-3">
             <label class="form-label fw-medium" for="acctNumber">Account Number</label>
             <input type="text" id="acctNumber" name="account_number" class="form-control" placeholder="Last 4 digits or full number" required />
           </div>
           <div class="mb-3">
+            <label class="form-label fw-medium" for="acctType">Account Type</label>
+            <select id="acctType" name="account_type" class="form-select" required>
+              <option value="checking">Checking</option>
+              <option value="savings">Savings</option>
+              <option value="credit_card">Credit Card</option>
+            </select>
+          </div>
+          <div class="mb-3">
             <label class="form-label fw-medium" for="acctNotes">Notes</label>
             <textarea id="acctNotes" name="notes" class="form-control" rows="2" placeholder="Optional notes"></textarea>
+          </div>
+          <hr class="my-3" />
+          <p class="small fw-semibold text-uppercase text-muted mb-2">Source Account</p>
+          <div class="row g-2">
+            <div class="col-12">
+              <label class="form-label small" for="acctSourceId">Account</label>
+              <select id="acctSourceId" name="source_account_id" class="form-select">
+                <option value="">None</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small" for="acctSourceAmount">Amount</label>
+              <input type="number" id="acctSourceAmount" name="source_amount" class="form-control" placeholder="0.00" step="0.01" min="0" />
+            </div>
+            <div class="col-6">
+              <label class="form-label small" for="acctSourceFreq">Frequency</label>
+              <select id="acctSourceFreq" name="source_frequency" class="form-select">
+                <option value="">—</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </div>
           </div>
         </form>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" onclick="submitAddAccount()">Save</button>
+        <button type="button" class="btn btn-primary" onclick="submitAccountForm()">Save</button>
       </div>
     </div>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
 <script src="/static/assets/scripts/common.js"></script>
 <script src="/static/assets/scripts/accounts.js"></script>
 </body>

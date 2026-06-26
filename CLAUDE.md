@@ -50,6 +50,11 @@ HTML/JS frontend with Chart.js.
 - `frontend/assets/scripts/app.js` — all frontend JavaScript (API helpers, charts, forms, NAS banners)
 - `frontend/app/pages/index.html` — dashboard HTML; Bootstrap 5.3 + Chart.js 4 via CDN; references `/static/assets/`
 
+## Frontend libraries
+
+- **Font Awesome 6 free** (6.7.2) via jsDelivr CDN — included in all pages.
+  Always use the `fa-regular` prefix (e.g. `fa-regular fa-pen-to-square`). Never use `fa-solid` or `fa-light`.
+
 ## Development rules
 
 - **Always add tests.** Every code change — new feature, bug fix, refactor — must include

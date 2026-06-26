@@ -33,6 +33,7 @@ faresight/
 │       └── pages/
 │           └── index.html    # Dashboard HTML (Bootstrap 5.3 + Chart.js via CDN)
 ├── config.yaml        # App configuration
+├── dev.sh             # Start / stop / status helper (works from any shell)
 └── requirements.txt
 ```
 
@@ -49,30 +50,33 @@ source .venv/bin/activate.fish      # fish
 pip install -r requirements.txt
 ```
 
-Then use the dev script (works from bash, fish, or zsh):
+Then start the dev server (works from bash, fish, zsh, or any shell):
 
 ```bash
-./dev.sh start    # launch in the background → http://localhost:8000
-./dev.sh stop     # graceful shutdown
-./dev.sh status   # check if it's running
+./dev.sh          # start in background
+./dev.sh stop     # stop
+./dev.sh status   # check if running
 ```
 
-Logs are written to `.dev.log` in the project root.
+Open http://localhost:8000 in your browser. Logs are written to `.dev.log`.
 
-## Dev script
+## Dev server script (`dev.sh`)
 
-`dev.sh` manages the app as a background process and works from any shell.
+`dev.sh` manages the uvicorn process as a background daemon and tracks it with a `.dev.pid`
+file. It calls `.venv/bin/uvicorn` directly, so no shell activation is needed — the script
+works identically from bash, fish, zsh, or any other shell.
 
 | Command | Action |
 |---------|--------|
-| `./dev.sh start` | Start uvicorn in the background, write PID to `.dev.pid` |
-| `./dev.sh stop` | Send SIGTERM to the running process |
-| `./dev.sh status` | Print whether the app is running and its PID |
+| `./dev.sh` or `./dev.sh start` | Start uvicorn in the background |
+| `./dev.sh stop` | Send SIGTERM to the server |
+| `./dev.sh status` | Show running / stopped / stale-pidfile |
 
-The script calls `.venv/bin/uvicorn` directly — no `source activate` required. If the
-virtualenv is missing it prints the right activation command for your shell.
+**After editing `config.yaml`** (e.g. adding banks), a full restart is required — `--reload` only watches `.py` files:
 
-**After editing `config.yaml`** (e.g. adding banks), a full restart is required — `--reload` only watches `.py` files.
+```bash
+./dev.sh stop && ./dev.sh start
+```
 
 ## Configuration (`config.yaml`)
 

@@ -163,7 +163,7 @@ def sync_from_nas() -> None:
     if not nas_path.exists():
         if LOCAL_DB_PATH.exists():
             nas_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(str(LOCAL_DB_PATH), str(nas_path))
+            shutil.copyfile(str(LOCAL_DB_PATH), str(nas_path))
             _write_marker(nas_path.stat().st_mtime)
             _write_lock()
             logger.info("NAS sync: first run — pushed local DB → %s", nas_path)
@@ -180,11 +180,11 @@ def sync_from_nas() -> None:
     if last_pull is None or nas_mtime > last_pull:
         if LOCAL_DB_PATH.exists():
             bak = LOCAL_DB_PATH.with_suffix(".db.bak")
-            shutil.copy2(str(LOCAL_DB_PATH), str(bak))
+            shutil.copyfile(str(LOCAL_DB_PATH), str(bak))
             logger.info("NAS sync: backed up local DB → %s", bak)
 
         LOCAL_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(str(nas_path), str(LOCAL_DB_PATH))
+        shutil.copyfile(str(nas_path), str(LOCAL_DB_PATH))
         _write_marker(nas_mtime)
         ts = datetime.fromtimestamp(nas_mtime).isoformat(timespec="seconds")
         logger.info("NAS sync: pulled update from NAS (NAS last modified %s)", ts)
@@ -216,7 +216,7 @@ def sync_to_nas() -> None:
 
     nas_path = Path(NAS_SHARE_PATH)
     nas_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(str(LOCAL_DB_PATH), str(nas_path))
+    shutil.copyfile(str(LOCAL_DB_PATH), str(nas_path))
     _write_marker(nas_path.stat().st_mtime)
     _write_lock()
 

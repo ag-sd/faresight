@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from app.models import AccountType
+from app.models import AccountType, SourceFrequency
 
 
 class TransactionCreate(BaseModel):
@@ -34,20 +34,26 @@ class TransactionOut(TransactionCreate):
 # ── Accounts ──────────────────────────────────────────────────────────────────
 
 class AccountCreate(BaseModel):
+    bank: str
     name: str
-    nickname: str
     account_number: str
     account_type: AccountType
     notes: Optional[str] = None
+    source_account_id: Optional[int] = None
+    source_amount: Optional[float] = None
+    source_frequency: Optional[SourceFrequency] = None
 
 
 class AccountUpdate(BaseModel):
+    bank: Optional[str] = None
     name: Optional[str] = None
-    nickname: Optional[str] = None
     account_number: Optional[str] = None
     account_type: Optional[AccountType] = None
     notes: Optional[str] = None
     is_active: Optional[bool] = None
+    source_account_id: Optional[int] = None
+    source_amount: Optional[float] = None
+    source_frequency: Optional[SourceFrequency] = None
 
 
 class AccountOut(AccountCreate):

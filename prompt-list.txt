@@ -1,5 +1,17 @@
-in the import from csv section, instead of bank. now make it select an account. Also remove the banks enum
+
 
 add beneficiaries as a list to the account object. Make it possbile to edit this list separately.
 
-change the tables to a good table library or bootstrap table that lets sorting filtering and searching
+
+
+Lets add a new feature to accounts. Lets add the ability to edit an account. It should use the same modal as the create modal.
+Lets also add the ability to link another account to an account. We will call this linked account the source. When an account is linked to an account,
+the user can add an amount and frequency (weekly, monthly, yearly). this represents how the new account is seeded with money.
+The accounts table should let you edit the account. Use the right bootstrap colors for edit and delete
+
+Then we should now update the accounts page table to show how the money comes into an account. you will add a section called Transfers which has a table with the following columns
+From, to, amount, frequency. For the From and To, we should add a tooltip which gives you the basic details of the account.
+
+claude --resume 6bcab0a9-e23e-4e10-8afa-1702a7bcb815
+
+write a script that will start up the app and shut it down. Provide support for bash and fish shells

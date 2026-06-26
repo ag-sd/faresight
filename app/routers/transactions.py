@@ -114,7 +114,7 @@ async def import_csv(
     account = db.get(Account, account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
-    source = account.nickname
+    source = account.name
 
     content = await file.read()
     text = content.decode("utf-8-sig")  # strip BOM if present

@@ -1,5 +1,9 @@
-nas_share_path: /mnt/nas-expenses/expenses.db
+nas_share_path: /home/sheldon/Documents/nas/share/Sheldon/Faresight/faresight.db
 local_db_path: ~/.local/share/expense-tracker/local.db
 sync_on_startup: true
 sync_on_shutdown: true
 sync_interval_minutes: 5
+
+bank_logos:
+  bank of america: bank-of-america.svg
+  capital one: capital-one.svg

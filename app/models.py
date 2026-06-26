@@ -2,7 +2,7 @@ import enum
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, Float, Integer, String, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -12,6 +12,12 @@ class AccountType(str, enum.Enum):
     credit_card = "credit_card"
     checking = "checking"
     savings = "savings"
+
+
+class SourceFrequency(str, enum.Enum):
+    weekly = "weekly"
+    monthly = "monthly"
+    yearly = "yearly"
 
 
 class Transaction(Base):
@@ -33,12 +39,19 @@ class Account(Base):
     __tablename__ = "accounts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    bank: Mapped[str] = mapped_column(String(100), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    nickname: Mapped[str] = mapped_column(String(100), nullable=False)
     account_number: Mapped[str] = mapped_column(String(50), nullable=False)
     account_type: Mapped[AccountType] = mapped_column(Enum(AccountType), nullable=False)
     notes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
+    )
+    source_account_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("accounts.id"), nullable=True
+    )
+    source_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    source_frequency: Mapped[Optional[SourceFrequency]] = mapped_column(
+        Enum(SourceFrequency), nullable=True
     )
