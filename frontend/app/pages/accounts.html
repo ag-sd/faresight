@@ -183,6 +183,79 @@
   </div>
 </div>
 
+<!-- Details Account Modal -->
+<div class="modal fade" id="detailsAccountModal" tabindex="-1" aria-labelledby="detailsAccountModalTitle" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="detailsAccountModalTitle">Account Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="detailsAccountForm" novalidate>
+          <div class="mb-3">
+            <label class="form-label fw-medium" for="detailName">Bank</label>
+            <input type="text" id="detailName" name="bank" class="form-control" disabled />
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-medium" for="detailNickname">Name</label>
+            <input type="text" id="detailNickname" name="name" class="form-control" disabled />
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-medium" for="detailNumber">Account Number</label>
+            <input type="text" id="detailNumber" name="account_number" class="form-control" disabled />
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-medium" for="detailType">Account Type</label>
+            <select id="detailType" name="account_type" class="form-select" disabled>
+              <option value="checking">Checking</option>
+              <option value="savings">Savings</option>
+              <option value="credit_card">Credit Card</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-medium" for="detailNotes">Notes</label>
+            <textarea id="detailNotes" name="notes" class="form-control" rows="2" disabled></textarea>
+          </div>
+          <hr class="my-3" />
+          <p class="small fw-semibold text-uppercase text-muted mb-2">Source Account</p>
+          <div class="row g-2">
+            <div class="col-12">
+              <label class="form-label small" for="detailSourceId">Account</label>
+              <select id="detailSourceId" name="source_account_id" class="form-select" disabled>
+                <option value="">None</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small" for="detailSourceAmount">Amount</label>
+              <input type="number" id="detailSourceAmount" name="source_amount" class="form-control" step="0.01" min="0" disabled />
+            </div>
+            <div class="col-6">
+              <label class="form-label small" for="detailSourceFreq">Frequency</label>
+              <select id="detailSourceFreq" name="source_frequency" class="form-select" disabled>
+                <option value="">—</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <div id="detailsFooter" class="d-flex gap-2 justify-content-end w-100">
+          <button type="button" class="btn btn-danger btn-sm" id="detailsDeactivateBtn" onclick="deactivateFromDetails()">Deactivate</button>
+          <button type="button" class="btn btn-primary" onclick="enterEditMode()">Edit</button>
+        </div>
+        <div id="detailsEditFooter" class="d-flex gap-2 w-100 justify-content-end d-none">
+          <button type="button" class="btn btn-secondary" onclick="exitEditMode()">Discard</button>
+          <button type="button" class="btn btn-primary" onclick="saveDetailsForm()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
 <script src="/static/assets/scripts/common.js"></script>

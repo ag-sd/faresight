@@ -24,8 +24,9 @@ def get_db():
 
 
 def migrate_db() -> None:
-    """Non-destructively evolve the accounts table schema on existing SQLite DBs."""
+    """Non-destructively evolve table schemas on existing SQLite DBs."""
     with engine.connect() as conn:
+        # ── accounts ──────────────────────────────────────────────────────────
         rows = conn.execute(text("PRAGMA table_info(accounts)")).fetchall()
         existing = {row[1] for row in rows}
 
@@ -43,5 +44,21 @@ def migrate_db() -> None:
         for old, new in [("name", "bank"), ("nickname", "name")]:
             if old in existing and new not in existing:
                 conn.execute(text(f"ALTER TABLE accounts RENAME COLUMN {old} TO {new}"))
+
+        # ── transactions ──────────────────────────────────────────────────────
+        rows = conn.execute(text("PRAGMA table_info(transactions)")).fetchall()
+        tx_existing = {row[1] for row in rows}
+
+        # Drop legacy free-text source column if still present.
+        if "source" in tx_existing:
+            conn.execute(text("ALTER TABLE transactions DROP COLUMN source"))
+
+        # source_account_id was briefly used; rename to the canonical account_id.
+        if "source_account_id" in tx_existing and "account_id" not in tx_existing:
+            conn.execute(text("ALTER TABLE transactions RENAME COLUMN source_account_id TO account_id"))
+        elif "account_id" not in tx_existing and "source_account_id" not in tx_existing:
+            conn.execute(text(
+                "ALTER TABLE transactions ADD COLUMN account_id INTEGER REFERENCES accounts(id)"
+            ))
 
         conn.commit()

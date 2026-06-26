@@ -4,6 +4,14 @@ import pytest
 from tests.conftest import make_tx
 
 
+def _make_account(client, **kwargs):
+    defaults = {"bank": "Test Bank", "name": "Test Card", "account_number": "1234", "account_type": "credit_card"}
+    defaults.update(kwargs)
+    r = client.post("/api/accounts", json=defaults)
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
 # ── Create ────────────────────────────────────────────────────────────────────
 
 def test_create_minimal(client):
@@ -14,14 +22,15 @@ def test_create_minimal(client):
     assert tx["amount"] == -10.00
     assert tx["category"] == "Food"
     assert tx["note"] is None
-    assert tx["source"] is None
+    assert tx["account_id"] is None
     assert "created_at" in tx
 
 
 def test_create_with_all_fields(client):
-    tx = make_tx(client, note="weekly shop", source="Visa", amount=-55.25)
+    acct_id = _make_account(client, bank="Visa", name="Visa Card")
+    tx = make_tx(client, note="weekly shop", account_id=acct_id, amount=-55.25)
     assert tx["note"] == "weekly shop"
-    assert tx["source"] == "Visa"
+    assert tx["account_id"] == acct_id
     assert tx["amount"] == -55.25
 
 
@@ -114,15 +123,16 @@ def test_patch_amount(client):
 
 
 def test_patch_multiple_fields(client):
+    acct_id = _make_account(client, bank="Amex", name="Amex Card")
     tx = make_tx(client)
     r = client.patch(
         f"/api/transactions/{tx['id']}",
-        json={"category": "Travel", "note": "flight", "source": "Amex"},
+        json={"category": "Travel", "note": "flight", "account_id": acct_id},
     )
     data = r.json()
     assert data["category"] == "Travel"
     assert data["note"] == "flight"
-    assert data["source"] == "Amex"
+    assert data["account_id"] == acct_id
 
 
 def test_patch_nonexistent_returns_404(client):

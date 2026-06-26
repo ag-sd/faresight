@@ -29,7 +29,7 @@ class Transaction(Base):
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     category: Mapped[str] = mapped_column(String(100), nullable=False)
     note: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    account_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

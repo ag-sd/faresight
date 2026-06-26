@@ -1,5 +1,6 @@
 // ── State ─────────────────────────────────────────────────────────────────────
 let catChart, monthChart, txTable;
+let _accounts = [];
 
 // ── Tabulator: transactions ───────────────────────────────────────────────────
 function initTxTable() {
@@ -32,9 +33,13 @@ function initTxTable() {
         },
       },
       {
-        title: 'Source', field: 'source',
-        headerFilter: 'input', widthGrow: 1,
-        formatter: (cell) => cell.getValue() ? esc(String(cell.getValue())) : '—',
+        title: 'Source', field: 'account_id', widthGrow: 1,
+        formatter: (cell) => {
+          const id = cell.getValue();
+          if (!id) return '—';
+          const acct = _accounts.find(a => a.id === id);
+          return acct ? esc(acct.name) : String(id);
+        },
       },
       {
         title: 'Amount', field: 'amount', sorter: 'number',
@@ -55,15 +60,19 @@ function initTxTable() {
   });
 }
 
-// ── Account select (Import CSV) ───────────────────────────────────────────────
-async function refreshAccountSelect() {
-  const accounts = await api('/api/accounts');
-  const select = document.getElementById('accountSelect');
-  select.innerHTML = '<option value="">Select account…</option>';
-  accounts.filter(a => a.is_active).forEach(a => {
-    select.insertAdjacentHTML('beforeend',
-      `<option value="${a.id}">${esc(a.nickname)} (${esc(a.name)})</option>`);
-  });
+// ── Account selects ───────────────────────────────────────────────────────────
+async function refreshAccountSelects() {
+  _accounts = await api('/api/accounts');
+  const active = _accounts.filter(a => a.is_active);
+  const makeOption = a => `<option value="${a.id}">${esc(a.name)} (${esc(a.bank)})</option>`;
+
+  const importSelect = document.getElementById('accountSelect');
+  importSelect.innerHTML = '<option value="">Select account…</option>';
+  active.forEach(a => importSelect.insertAdjacentHTML('beforeend', makeOption(a)));
+
+  const txSelect = document.getElementById('txSourceSelect');
+  txSelect.innerHTML = '<option value="">No account</option>';
+  active.forEach(a => txSelect.insertAdjacentHTML('beforeend', makeOption(a)));
 }
 
 // ── Import CSV form ───────────────────────────────────────────────────────────
@@ -156,7 +165,7 @@ document.getElementById('addForm').addEventListener('submit', async e => {
     description: fd.get('description'),
     amount: parseFloat(fd.get('amount')),
     category: fd.get('category'),
-    source: fd.get('source') || null,
+    account_id: parseInt(fd.get('account_id')) || null,
     note: fd.get('note') || null,
   };
   await api('/api/transactions', { method: 'POST', body: JSON.stringify(body) });
@@ -171,5 +180,7 @@ async function refreshAll() {
 
 document.querySelector('input[name=date]').valueAsDate = new Date();
 initTxTable();
-refreshAccountSelect();
-refreshAll();
+(async () => {
+  await refreshAccountSelects();
+  refreshAll();
+})();

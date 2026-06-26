@@ -12,7 +12,7 @@ class TransactionCreate(BaseModel):
     amount: float
     category: str
     note: Optional[str] = None
-    source: Optional[str] = None
+    account_id: Optional[int] = None
 
 
 class TransactionUpdate(BaseModel):
@@ -21,7 +21,7 @@ class TransactionUpdate(BaseModel):
     amount: Optional[float] = None
     category: Optional[str] = None
     note: Optional[str] = None
-    source: Optional[str] = None
+    account_id: Optional[int] = None
 
 
 class TransactionOut(TransactionCreate):

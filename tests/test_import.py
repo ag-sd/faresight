@@ -31,7 +31,7 @@ def test_import_minimal_csv(client):
     assert body["errors"] == []
 
 
-def test_import_sets_source_to_account_name(client):
+def test_import_sets_account_id(client):
     acct_id = _make_account(client, name="My Chase Card")
     csv_data = "date,description,amount\n2024-01-15,Coffee,-4.50\n"
     client.post(
@@ -40,7 +40,7 @@ def test_import_sets_source_to_account_name(client):
         files={"file": _csv(csv_data)},
     )
     txs = client.get("/api/transactions").json()
-    assert txs[0]["source"] == "My Chase Card"
+    assert txs[0]["account_id"] == acct_id
 
 
 def test_import_with_optional_columns(client):

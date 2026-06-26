@@ -1,4 +1,6 @@
-# Faresight — Claude Context
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Off-limits files
 
@@ -9,46 +11,44 @@
 Local expense tracker. FastAPI backend + SQLite (SQLAlchemy 2) + Bootstrap 5.3
 HTML/JS frontend with Chart.js.
 
-## Original scaffold instruction
+## Commands
 
-> Build a local expense tracker web app using FastAPI for the backend and
-> SQLite for storage (via SQLAlchemy), with a plain HTML/JS frontend using
-> Chart.js for charts.
->
-> Project structure:
-> - app/faresight.py — FastAPI app
-> - app/database.py — SQLAlchemy engine pointing to a LOCAL SQLite file path
->   defined in config
-> - app/models.py — Transaction model (id, date, description, amount,
->   category, note, source, created_at)
-> - app/nas.py — placeholder module for NAS sync logic (implement in a
->   later step)
-> - frontend/ — HTML/JS/Chart.js dashboard
-> - config.yaml — app configuration file
->
-> config.yaml should include:
->   nas_share_path: /mnt/nas-expenses/expenses.db
->   local_db_path: ~/.local/share/expense-tracker/local.db
->   sync_on_startup: true
->   sync_on_shutdown: true
->   sync_interval_minutes: 5
->
-> Scaffold the project, install dependencies, and get a basic version
-> running on localhost:8000 reading from local_db_path. Don't implement
-> the NAS sync logic yet — just get the skeleton running against the
-> local SQLite file.
+```bash
+# Run the app
+source .venv/bin/activate
+uvicorn app.faresight:app --reload
+
+# Run all tests
+.venv/bin/pytest tests/ -v
+
+# Run a single test file
+.venv/bin/pytest tests/test_transactions.py -v
+
+# Run a single test by name
+.venv/bin/pytest tests/test_transactions.py::test_create_transaction -v
+```
+
+## Architecture
+
+Routes are split into routers under `app/routers/`:
+- `app/routers/transactions.py` — CRUD + summary/chart endpoints + CSV import (`/api/transactions`, `/api/summary/*`, `/api/categories`)
+- `app/routers/accounts.py` — account management (`/api/accounts`, `/api/accounts/bank-logos`)
+- `app/routers/sync.py` — NAS sync control (`/api/sync`, `/api/sync/status`, `/api/sync/go-offline`)
+
+`app/faresight.py` wires the routers, mounts `/static → frontend/`, handles the lifespan (DB creation → `migrate_db()` → `sync_from_nas()` → periodic sync loop → shutdown push), and serves the two HTML pages at `/` and `/accounts`.
+
+**Schema migrations** are handled by `migrate_db()` in `app/database.py` — raw `ALTER TABLE` / `RENAME COLUMN` SQL against the live SQLite file. Add new migrations there when adding columns to existing tables.
 
 ## Key files
 
-- `app/config.py` — loads `config.yaml`; all other modules import constants from here
-- `app/database.py` — creates the SQLAlchemy engine from `LOCAL_DB_PATH`; auto-creates the parent directory
-- `app/models.py` — `Transaction` table
-- `app/schemas.py` — Pydantic schemas for request/response
-- `app/faresight.py` — all routes; serves `frontend/app/pages/index.html` at `/`
-- `app/nas.py` — stub only; raises `NotImplementedError`
-- `frontend/assets/css/app.css` — custom CSS (chart container height, tabular-nums)
-- `frontend/assets/scripts/app.js` — all frontend JavaScript (API helpers, charts, forms, NAS banners)
-- `frontend/app/pages/index.html` — dashboard HTML; Bootstrap 5.3 + Chart.js 4 via CDN; references `/static/assets/`
+- `app/config.py` — loads `config.yaml`; exports `NAS_SHARE_PATH`, `LOCAL_DB_PATH`, `SYNC_INTERVAL_MINUTES`, `BANK_LOGOS`
+- `app/database.py` — SQLAlchemy engine + `migrate_db()` for schema evolution
+- `app/models.py` — `Transaction` and `Account` tables; `AccountType` and `SourceFrequency` enums
+- `app/schemas.py` — Pydantic schemas for all request/response types
+- `app/sync.py` — full NAS sync state machine; see NAS sync section below
+- `frontend/assets/scripts/app.js` — all frontend JavaScript
+- `frontend/app/pages/index.html` — main dashboard (transactions + charts)
+- `frontend/app/pages/accounts.html` — accounts management page
 
 ## Frontend libraries
 
@@ -58,9 +58,11 @@ HTML/JS frontend with Chart.js.
 ## Development rules
 
 - **Always add tests.** Every code change — new feature, bug fix, refactor — must include
-  corresponding tests in `tests/`. Run `pytest` before declaring work done. List coverage once done
+  corresponding tests in `tests/`. Run `pytest` before declaring work done. List coverage once done.
 - Tests use an in-memory SQLite DB via the `client` fixture in `tests/conftest.py`.
   Never write tests that touch the real `local_db_path`.
+- `conftest.py` also provides `make_tx(client, **kwargs)` — a helper to POST a transaction with
+  sensible defaults. Use it instead of repeating the payload boilerplate.
 - Try to write tests for the UI as well to the best extent possible.
 
 ## Runtime notes
@@ -69,7 +71,6 @@ HTML/JS frontend with Chart.js.
   in Pydantic models and FastAPI route signatures — the `X | None` union syntax
   triggers a Pydantic evaluation bug on Python 3.14.
 - Virtualenv lives at `.venv/`; activate with `source .venv/bin/activate`
-- Run: `uvicorn app.faresight:app --reload`
 - DB is created automatically at `~/.local/share/expense-tracker/local.db`
 
 ## NAS sync (`app/sync.py`) — full lifecycle
@@ -97,11 +98,6 @@ It is synchronous — no threads, no scheduler.
 - Released on shutdown (`_release_lock()`) — only if hostname matches ours
 
 **`_status` keys:** `reachable`, `last_action`, `detail`, `lock_warning`, `last_push`, `sync_enabled`
-
-**API:**
-- `GET /api/sync/status` — returns `_status`
-- `POST /api/sync` — push now (also used for "Proceed anyway")
-- `POST /api/sync/go-offline` — disables NAS sync for this session
 
 **Frontend banners:**
 - Lock conflict → red banner with [Proceed anyway] / [Work offline]

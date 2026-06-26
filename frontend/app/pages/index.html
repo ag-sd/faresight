@@ -106,7 +106,9 @@
               <datalist id="catList"></datalist>
             </div>
             <div class="col-sm-6 col-md-4 col-lg-2">
-              <input type="text" name="source" class="form-control" placeholder="Source (e.g. credit card)" />
+              <select name="account_id" id="txSourceSelect" class="form-select">
+                <option value="">No account</option>
+              </select>
             </div>
             <div class="col-12">
               <textarea name="note" class="form-control" placeholder="Note (optional)" rows="2"></textarea>

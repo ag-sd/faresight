@@ -1,5 +1,6 @@
 // ── State ─────────────────────────────────────────────────────────────────────
 let _editingAccountId = null;
+let _detailsAccount = null;
 let accountsTable, transfersTable;
 let _allAccounts = [];
 let _bankLogos = {};
@@ -58,29 +59,13 @@ function initAccountsTable() {
         },
       },
       {
-        title: 'Notes', field: 'notes',
-        headerFilter: 'input', widthGrow: 3,
-        formatter: (cell) => cell.getValue() ? esc(String(cell.getValue())) : '—',
-      },
-      {
-        title: '', headerSort: false, hozAlign: 'center', width: 90,
-        formatter: (cell) => {
-          const active = cell.getRow().getData().is_active;
-          const dis = active ? '' : ' disabled';
-          return `<div class="d-flex gap-1 justify-content-center">` +
-            `<button class="btn btn-primary btn-sm"${dis} title="Edit" aria-label="Edit"><i class="fa-regular fa-pen-to-square"></i></button>` +
-            `<button class="btn btn-secondary btn-sm"${dis} title="Deactivate" aria-label="Deactivate"><i class="fa-regular fa-trash-can"></i></button>` +
-            `</div>`;
-        },
+        title: '', headerSort: false, hozAlign: 'center', width: 60,
+        formatter: () =>
+          `<button class="btn btn-outline-secondary btn-sm" title="Details" aria-label="Details">` +
+          `<i class="fa-regular fa-eye"></i></button>`,
         cellClick: (_e, cell) => {
-          const btn = _e.target.closest('button');
-          if (!btn || btn.disabled) return;
-          const data = cell.getRow().getData();
-          if (btn.classList.contains('btn-primary')) {
-            openEditAccount(data);
-          } else if (btn.classList.contains('btn-secondary')) {
-            deactivateAccount(data.id);
-          }
+          if (!_e.target.closest('button')) return;
+          openDetailsAccount(cell.getRow().getData());
         },
       },
     ],
@@ -189,21 +174,103 @@ function openAddAccount(type) {
   bootstrap.Modal.getOrCreateInstance(document.getElementById('addAccountModal')).show();
 }
 
-// ── Modal open: edit ──────────────────────────────────────────────────────────
-function openEditAccount(account) {
-  _editingAccountId = account.id;
-  document.getElementById('addAccountModalTitle').textContent = 'Edit Account';
-  document.getElementById('acctId').value = account.id;
-  document.getElementById('acctName').value = account.bank;
-  document.getElementById('acctNickname').value = account.name;
-  document.getElementById('acctNumber').value = account.account_number;
-  document.getElementById('acctType').value = account.account_type;
-  document.getElementById('acctNotes').value = account.notes ?? '';
-  populateSourceSelect(account.id);
-  document.getElementById('acctSourceId').value = account.source_account_id ?? '';
-  document.getElementById('acctSourceAmount').value = account.source_amount ?? '';
-  document.getElementById('acctSourceFreq').value = account.source_frequency ?? '';
-  bootstrap.Modal.getOrCreateInstance(document.getElementById('addAccountModal')).show();
+// ── Details modal helpers ─────────────────────────────────────────────────────
+function _setDetailsFormDisabled(disabled) {
+  document.querySelectorAll('#detailsAccountForm input, #detailsAccountForm select, #detailsAccountForm textarea')
+    .forEach(el => { el.disabled = disabled; });
+}
+
+// ── Modal open: details ───────────────────────────────────────────────────────
+function openDetailsAccount(account) {
+  _detailsAccount = account;
+  document.getElementById('detailsAccountModalTitle').textContent = `${account.name} — Details`;
+  document.getElementById('detailName').value = account.bank;
+  document.getElementById('detailNickname').value = account.name;
+  document.getElementById('detailNumber').value = account.account_number;
+  document.getElementById('detailType').value = account.account_type;
+  document.getElementById('detailNotes').value = account.notes ?? '';
+
+  // Populate source select with all accounts (incl. inactive) for display
+  const sel = document.getElementById('detailSourceId');
+  sel.innerHTML = '<option value="">None</option>';
+  _allAccounts
+    .filter(a => a.id !== account.id)
+    .forEach(a => sel.insertAdjacentHTML('beforeend',
+      `<option value="${a.id}">${esc(a.name)} (${esc(a.bank)})</option>`));
+  sel.value = account.source_account_id ?? '';
+
+  document.getElementById('detailSourceAmount').value = account.source_amount ?? '';
+  document.getElementById('detailSourceFreq').value = account.source_frequency ?? '';
+
+  _setDetailsFormDisabled(true);
+  document.getElementById('detailsFooter').classList.remove('d-none');
+  document.getElementById('detailsEditFooter').classList.add('d-none');
+  document.getElementById('detailsDeactivateBtn').disabled = !account.is_active;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('detailsAccountModal')).show();
+}
+
+// ── Details modal: enter / exit edit mode ─────────────────────────────────────
+function enterEditMode() {
+  // Re-populate source select with active accounts only for editing
+  const currentSourceVal = document.getElementById('detailSourceId').value;
+  const sel = document.getElementById('detailSourceId');
+  sel.innerHTML = '<option value="">None</option>';
+  _allAccounts
+    .filter(a => a.is_active && a.id !== _detailsAccount.id)
+    .forEach(a => sel.insertAdjacentHTML('beforeend',
+      `<option value="${a.id}">${esc(a.name)} (${esc(a.bank)})</option>`));
+  sel.value = currentSourceVal;
+
+  _setDetailsFormDisabled(false);
+  document.getElementById('detailsFooter').classList.add('d-none');
+  document.getElementById('detailsEditFooter').classList.remove('d-none');
+}
+
+function exitEditMode() {
+  openDetailsAccount(_detailsAccount);
+}
+
+// ── Details modal: save ───────────────────────────────────────────────────────
+async function saveDetailsForm() {
+  const fd = new FormData(document.getElementById('detailsAccountForm'));
+  const sourceIdRaw = fd.get('source_account_id');
+  const sourceAmtRaw = fd.get('source_amount');
+  const sourceId = sourceIdRaw ? parseInt(sourceIdRaw, 10) : null;
+  const body = {
+    bank: fd.get('bank'),
+    name: fd.get('name'),
+    account_number: fd.get('account_number'),
+    account_type: fd.get('account_type'),
+    notes: fd.get('notes') || null,
+    source_account_id: sourceId,
+    source_amount: sourceId && sourceAmtRaw ? parseFloat(sourceAmtRaw) : null,
+    source_frequency: sourceId ? (fd.get('source_frequency') || null) : null,
+  };
+  try {
+    await api(`/api/accounts/${_detailsAccount.id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  } catch (err) {
+    let msg = 'Could not save account.';
+    try { msg = JSON.parse(err.message).detail; } catch {}
+    alert(msg);
+    return;
+  }
+  bootstrap.Modal.getInstance(document.getElementById('detailsAccountModal')).hide();
+  await refreshAccounts();
+}
+
+// ── Details modal: deactivate ─────────────────────────────────────────────────
+async function deactivateFromDetails() {
+  if (!confirm('Deactivate this account?')) return;
+  try {
+    await api(`/api/accounts/${_detailsAccount.id}`, { method: 'PATCH', body: JSON.stringify({ is_active: false }) });
+  } catch (err) {
+    let msg = 'Could not deactivate account.';
+    try { msg = JSON.parse(err.message).detail; } catch {}
+    alert(msg);
+    return;
+  }
+  bootstrap.Modal.getInstance(document.getElementById('detailsAccountModal')).hide();
+  await refreshAccounts();
 }
 
 // ── Modal submit (create + edit) ──────────────────────────────────────────────
@@ -241,20 +308,6 @@ async function submitAccountForm() {
   }
 
   bootstrap.Modal.getInstance(document.getElementById('addAccountModal')).hide();
-  await refreshAccounts();
-}
-
-// ── Delete (soft) ─────────────────────────────────────────────────────────────
-async function deactivateAccount(id) {
-  if (!confirm('Deactivate this account?')) return;
-  try {
-    await api(`/api/accounts/${id}`, { method: 'PATCH', body: JSON.stringify({ is_active: false }) });
-  } catch (err) {
-    let msg = 'Could not deactivate account.';
-    try { msg = JSON.parse(err.message).detail; } catch {}
-    alert(msg);
-    return;
-  }
   await refreshAccounts();
 }
 
