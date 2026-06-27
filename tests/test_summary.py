@@ -1,22 +1,5 @@
-"""Tests for the /api/summary/* and /api/categories endpoints."""
+"""Tests for the /api/summary/* endpoints."""
 from tests.conftest import make_tx
-
-
-# ── /api/categories ───────────────────────────────────────────────────────────
-
-def test_categories_empty(client):
-    r = client.get("/api/categories")
-    assert r.status_code == 200
-    assert r.json() == []
-
-
-def test_categories_returns_sorted_unique(client):
-    make_tx(client, category="Transport")
-    make_tx(client, category="Food")
-    make_tx(client, category="Food")
-    make_tx(client, category="Bills")
-    cats = client.get("/api/categories").json()
-    assert cats == ["Bills", "Food", "Transport"]
 
 
 # ── /api/summary/by-category ─────────────────────────────────────────────────

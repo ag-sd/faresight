@@ -29,3 +29,14 @@ def test_sync_flags_are_bool():
 def test_sync_interval_is_int():
     assert isinstance(cfg.SYNC_INTERVAL_MINUTES, int)
     assert cfg.SYNC_INTERVAL_MINUTES > 0
+
+
+def test_faresight_db_env_overrides_config(monkeypatch, tmp_path):
+    override = str(tmp_path / "test.db")
+    monkeypatch.setenv("FARESIGHT_DB", override)
+    import importlib
+    importlib.reload(cfg)
+    assert str(cfg.LOCAL_DB_PATH) == override
+    # Restore so other tests see the original value
+    monkeypatch.delenv("FARESIGHT_DB")
+    importlib.reload(cfg)

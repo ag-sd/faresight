@@ -1,6 +1,10 @@
 import enum
+from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from app.schemas import TransactionCreate
 
 from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -30,6 +34,9 @@ class Transaction(Base):
     category: Mapped[str] = mapped_column(String(100), nullable=False)
     note: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     account_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)
+    # AI-suggested category for human review; never overwrites `category`.
+    model_category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    model_confidence: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -55,3 +62,9 @@ class Account(Base):
     source_frequency: Mapped[Optional[SourceFrequency]] = mapped_column(
         Enum(SourceFrequency), nullable=True
     )
+
+
+@dataclass
+class ImportResult:
+    transactions: list["TransactionCreate"] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)

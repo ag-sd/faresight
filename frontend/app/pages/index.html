@@ -26,6 +26,9 @@
       <li class="nav-item">
         <a class="nav-link" href="/accounts">Accounts</a>
       </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/upload">Upload</a>
+      </li>
     </ul>
     <button id="syncNowBtn" class="btn btn-primary btn-sm" onclick="syncNow()">Sync now</button>
   </div>
@@ -41,87 +44,6 @@
 <div id="nasBanner" class="alert d-none d-flex align-items-center mb-0 rounded-0 border-0 border-bottom px-4 py-2 small fw-medium" role="alert"></div>
 
 <main class="container-lg my-4 px-3">
-
-  <!-- Add / Import Transactions -->
-  <div class="card shadow-sm mb-4">
-    <div class="card-header p-0 border-bottom-0">
-      <ul class="nav nav-tabs card-header-tabs px-3 pt-2" id="entryTabs" role="tablist">
-        <li class="nav-item" role="presentation">
-          <button class="nav-link active" id="import-tab" data-bs-toggle="tab" data-bs-target="#importPane"
-                  type="button" role="tab" aria-controls="importPane" aria-selected="true">
-            Import CSV
-          </button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button class="nav-link" id="manual-tab" data-bs-toggle="tab" data-bs-target="#manualPane"
-                  type="button" role="tab" aria-controls="manualPane" aria-selected="false">
-            Add manually
-          </button>
-        </li>
-      </ul>
-    </div>
-    <div class="tab-content">
-
-      <div class="tab-pane fade show active p-3" id="importPane" role="tabpanel" aria-labelledby="import-tab">
-        <h2 class="h6 text-uppercase text-muted fw-semibold mb-3">Import from CSV</h2>
-        <form id="importForm">
-          <div class="row g-2 align-items-end">
-            <div class="col-sm-4 col-md-3">
-              <label class="form-label small fw-medium" for="accountSelect">Account</label>
-              <select id="accountSelect" name="account_id" class="form-select" required>
-                <option value="">Select account…</option>
-              </select>
-            </div>
-            <div class="col-sm-6 col-md-5">
-              <label class="form-label small fw-medium" for="csvFile">CSV file</label>
-              <input type="file" id="csvFile" name="file" class="form-control" accept=".csv" required />
-            </div>
-            <div class="col-sm-2">
-              <button type="submit" class="btn btn-primary w-100">Import</button>
-            </div>
-          </div>
-        </form>
-        <div id="importResult" class="mt-3 d-none"></div>
-        <p class="text-muted small mt-3 mb-0">
-          Expected columns: <code>date</code> (YYYY-MM-DD), <code>description</code>, <code>amount</code>
-          (negative = expense). Optional: <code>category</code>, <code>note</code>.
-        </p>
-      </div>
-
-      <div class="tab-pane fade p-3" id="manualPane" role="tabpanel" aria-labelledby="manual-tab">
-        <h2 class="h6 text-uppercase text-muted fw-semibold mb-3">Add Transaction</h2>
-        <form id="addForm">
-          <div class="row g-2">
-            <div class="col-sm-6 col-md-4 col-lg-2">
-              <input type="date" name="date" class="form-control" required />
-            </div>
-            <div class="col-sm-6 col-md-4 col-lg-3">
-              <input type="text" name="description" class="form-control" placeholder="Description" required />
-            </div>
-            <div class="col-sm-6 col-md-4 col-lg-2">
-              <input type="number" name="amount" class="form-control" placeholder="Amount (negative = expense)" step="0.01" required />
-            </div>
-            <div class="col-sm-6 col-md-4 col-lg-2">
-              <input type="text" name="category" class="form-control" placeholder="Category" required list="catList" />
-              <datalist id="catList"></datalist>
-            </div>
-            <div class="col-sm-6 col-md-4 col-lg-2">
-              <select name="account_id" id="txSourceSelect" class="form-select">
-                <option value="">No account</option>
-              </select>
-            </div>
-            <div class="col-12">
-              <textarea name="note" class="form-control" placeholder="Note (optional)" rows="2"></textarea>
-            </div>
-            <div class="col-12">
-              <button type="submit" class="btn btn-primary">Add</button>
-            </div>
-          </div>
-        </form>
-      </div>
-
-    </div>
-  </div>
 
   <!-- Charts -->
   <div class="row g-3 mb-4">

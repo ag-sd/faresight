@@ -2,16 +2,70 @@
 
 add beneficiaries as a list to the account object. Make it possbile to edit this list separately.
 
+Build a transaction categorization module that pipes all transactions
+through Ollama (model: llama3.2:3b) in batches and writes back suggested categories
+for human review.
 
+REQUIREMENTS
 
-Lets add a new feature to accounts. Lets add the ability to edit an account. It should use the same modal as the create modal.
-Lets also add the ability to link another account to an account. We will call this linked account the source. When an account is linked to an account,
-the user can add an amount and frequency (weekly, monthly, yearly). this represents how the new account is seeded with money.
-The accounts table should let you edit the account. Use the right bootstrap colors for edit and delete
+Presteps> You will add 2 new fields to the transaction object: modelCategory and modelConfidence. The model category is the category that llama3
+returns along with how confident it is of the response.
 
-Then we should now update the accounts page table to show how the money comes into an account. you will add a section called Transfers which has a table with the following columns
-From, to, amount, frequency. For the From and To, we should add a tooltip which gives you the basic details of the account.
+1. Ollama lifecycle
+   - Define in config OLLAMA_HOST = "http://localhost:11434".
+   - Before processing, health-check by GETting {OLLAMA_HOST}/api/tags.
+   - If the request fails (connection refused), Ollama is not running. Start it:
+     launch `ollama serve` as a detached background subprocess
+     (subprocess.Popen, stdout/stderr to a log file or DEVNULL).
+   - Poll /api/tags every 1s for up to 30s until it returns 200. Raise a clear
+     error if it never comes up.
+   - After the server is up, confirm "llama3.2:3b" appears in /api/tags. If it is
+     missing, Raise a clear error if it never comes up.
+   - Do NOT kill Ollama afterwards — leave it running.
 
-claude --resume 6bcab0a9-e23e-4e10-8afa-1702a7bcb815
+2. Data fetch
+   - Once the importer has returned a list of transactions and before they get saved to the database. Wire in the ollama categorization.
+   - Process in batches of 20.
 
-write a script that will start up the app and shut it down. Provide support for bash and fish shells
+3. Inference call (per batch)
+   - POST to {OLLAMA_HOST}/api/generate with:
+       model: "llama3.2:3b"
+       stream: false
+       format: "json"          # forces valid JSON output
+       options: { "temperature": 0.1 }
+       prompt: <built from the SUB-PROMPT TEMPLATE below, with this batch injected>
+   - The model returns one category per transaction, keyed by id.
+
+4. Parse + validate (defensive — small models drift)
+   - Parse the JSON. Expect {"results": [{"id": <int>, "category": <str>, "confidence": <int>}, ...]}.
+   - For each returned category, check membership in ALLOWED_CATEGORIES
+     (case-insensitive match, normalize to canonical casing).
+   - Confidence represents a number on the scale of 0-10, where 10 is the highest confidence and 0 is the lowest.
+   - If a category is invalid, missing, or the id is unknown → set category to
+     "Other" and mark confidence as 0.
+   - If the whole batch fails to parse → retry that batch once; on second failure,
+     mark all rows in the batch needs_attention = true with category "Other".
+
+5. Write back
+   - UPDATE each transaction's  modelCategory and modelConfidence.
+   - Log per batch: count processed, count fell back to Other, any retries.
+
+6. Wrap the whole run so a batch failure never aborts the entire job — isolate
+   failures per batch and continue.
+
+7. Stub out the ollama prompt for now we will add that in later
+
+8. Here are the allowed categories to use
+    Groceries — supermarkets, grocery and food markets
+    Dining & Takeout — restaurants, cafes, bars, coffee, food delivery
+    Transportation — gas, parking, rideshare, transit, tolls, auto maintenance
+    Housing & Utilities — rent, mortgage, electric, water, gas, internet, phone, trash
+    Shopping — retail, online marketplaces, clothing, electronics, household goods
+    Health & Personal Care — pharmacy, doctors, dental, gym, salons
+    Entertainment & Subscriptions — streaming, games, events, movies, hobbies, memberships
+    Travel — flights, hotels, car rentals, vacation spend
+    Income — paychecks, deposits, refunds, interest, dividends
+    Transfers & Fees — account transfers, ATM, bank fees, card payments, taxes, loan payments
+
+Keep ALLOWED_CATEGORIES as a single module-level constant shared by the prompt
+builder and the validator.

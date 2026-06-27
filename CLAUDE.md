@@ -65,6 +65,20 @@ Routes are split into routers under `app/routers/`:
   sensible defaults. Use it instead of repeating the payload boilerplate.
 - Try to write tests for the UI as well to the best extent possible.
 
+## Safe server launch (verification / manual testing)
+
+**Never start the server without overriding the DB path.** The live DB at
+`~/.local/share/expense-tracker/local.db` contains real user data.
+
+Always use the `FARESIGHT_DB` env var to point the server at a temp file:
+
+```bash
+FARESIGHT_DB=$(mktemp --suffix=.db) uvicorn app.faresight:app --port 18765
+```
+
+The `.claude/skills/verifier-server.md` skill encodes the full safe-launch
+recipe and is picked up automatically by `/verify`.
+
 ## Runtime notes
 
 - Python 3.14 is in use. Use `Optional[T]` from `typing` instead of `T | None`
@@ -107,6 +121,13 @@ It is synchronous — no threads, no scheduler.
 
 In tests, monkeypatch `app.sync.NAS_SHARE_PATH`, `app.sync.LOCAL_DB_PATH`, `app.sync._OWN_HOSTNAME`, and `app.sync.SYNC_INTERVAL_MINUTES`.
 The `autouse=True` `reset_status` fixture in `tests/test_sync.py` resets all six `_status` fields between tests.
+
+## Importer conventions (`app/importers/`)
+
+- Each bank module lives in `app/importers/<bank>.py` and exports one or more import functions.
+- Import functions are registered by name in `app/importers/__init__.py` — the module itself does **not** own its display name.
+- **Debit columns = negative amounts; credit columns = positive amounts.** This is an invariant across all importers. A debit is a charge the account holder owes; a credit is a payment or refund reducing the balance.
+- Sample fixture CSVs for each importer live in `tests/` (e.g. `tests/capitalone_sample.csv`).
 
 ## What is NOT implemented yet
 

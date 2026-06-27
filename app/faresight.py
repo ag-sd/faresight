@@ -42,3 +42,8 @@ def root():
 @app.get("/accounts", response_class=FileResponse)
 def accounts_page():
     return FileResponse(FRONTEND_DIR / "app" / "pages" / "accounts.html")
+
+
+@app.get("/upload", response_class=FileResponse)
+def upload_page():
+    return FileResponse(FRONTEND_DIR / "app" / "pages" / "upload.html")

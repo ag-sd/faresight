@@ -1,13 +1,11 @@
-from datetime import date as date_type
-from typing import Optional
-import csv
-import io
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import extract, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.importers import IMPORTERS
 from app.models import Account, Transaction
 from app.schemas import TransactionCreate, TransactionOut, TransactionUpdate
 
@@ -97,47 +95,41 @@ def summary_by_month(db: Session = Depends(get_db)):
     ]
 
 
-@router.get("/categories")
-def list_categories(db: Session = Depends(get_db)):
-    rows = db.query(Transaction.category).distinct().all()
-    return sorted(r.category for r in rows)
-
-
 # ── Import ────────────────────────────────────────────────────────────────────
 
-@router.post("/transactions/import")
-async def import_csv(
-    file: UploadFile = File(...),
+@router.get("/importers")
+def list_importers() -> list[str]:
+    return list(IMPORTERS.keys())
+
+
+@router.post("/transactions/import-bulk")
+async def import_bulk(
+    files: List[UploadFile] = File(...),
     account_id: int = Form(...),
+    importer: str = Form(...),
     db: Session = Depends(get_db),
 ):
     account = db.get(Account, account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
+    if importer not in IMPORTERS:
+        raise HTTPException(status_code=400, detail=f"Unknown importer: {importer!r}")
 
-    content = await file.read()
-    text = content.decode("utf-8-sig")  # strip BOM if present
-    reader = csv.DictReader(io.StringIO(text))
+    import_fn = IMPORTERS[importer]
+    results = []
 
-    imported = 0
-    errors = []
-
-    for i, row in enumerate(reader, start=2):  # row 1 is the header
-        try:
-            tx = Transaction(
-                date=date_type.fromisoformat(row["date"].strip()),
-                description=row["description"].strip(),
-                amount=float(row["amount"].strip()),
-                category=row.get("category", "").strip() or "Uncategorized",
-                note=row.get("note", "").strip() or None,
-                account_id=account.id,
-            )
-            db.add(tx)
-            imported += 1
-        except KeyError as e:
-            errors.append(f"Row {i}: missing column {e}")
-        except ValueError as e:
-            errors.append(f"Row {i}: {e}")
+    for file in files:
+        file_bytes = await file.read()
+        result = import_fn(file_bytes, account)
+        for tx in result.transactions:
+            db.add(Transaction(**tx.model_dump()))
+        results.append({
+            "filename": file.filename,
+            "imported": len(result.transactions),
+            "errors": result.errors,
+        })
 
     db.commit()
-    return {"imported": imported, "errors": errors}
+    return results
+
+
