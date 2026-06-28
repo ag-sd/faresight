@@ -4,6 +4,10 @@ sync_on_startup: true
 sync_on_shutdown: true
 sync_interval_minutes: 5
 
+ollama_host: http://localhost:11434
+ollama_model: llama3.2:3b
+categorization_poll_interval_s: 10
+
 bank_logos:
   bank of america: bank-of-america.svg
   capital one: capital-one.svg

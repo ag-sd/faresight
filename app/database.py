@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import LOCAL_DB_PATH
@@ -9,6 +9,13 @@ DATABASE_URL = f"sqlite:///{LOCAL_DB_PATH}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+@event.listens_for(engine, "connect")
+def _set_wal_mode(dbapi_conn, _):
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.close()
 
 
 class Base(DeclarativeBase):
@@ -60,5 +67,19 @@ def migrate_db() -> None:
             conn.execute(text(
                 "ALTER TABLE transactions ADD COLUMN account_id INTEGER REFERENCES accounts(id)"
             ))
+
+        # AI categorization fields (suggested category + confidence for human review).
+        tx_new_columns = [
+            ("model_category",   "VARCHAR(100)"),
+            ("model_confidence", "INTEGER"),
+        ]
+        for col_name, col_def in tx_new_columns:
+            if col_name not in tx_existing:
+                conn.execute(text(f"ALTER TABLE transactions ADD COLUMN {col_name} {col_def}"))
+
+        # Backfill pre-default-change NULL rows so they are queued for categorization.
+        conn.execute(text(
+            "UPDATE transactions SET model_confidence = -1 WHERE model_confidence IS NULL"
+        ))
 
         conn.commit()

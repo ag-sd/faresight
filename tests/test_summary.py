@@ -35,6 +35,37 @@ def test_by_category_rounds_to_two_decimals(client):
     assert rows[0]["total"] == round(-0.001 + -0.001, 2)
 
 
+# ── /api/summary/by-model-category ──────────────────────────────────────────
+
+def test_by_model_category_empty(client):
+    r = client.get("/api/summary/by-model-category")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_by_model_category_sums_per_category(client):
+    make_tx(client, model_category="Groceries", model_confidence=8, amount=-10.00)
+    make_tx(client, model_category="Groceries", model_confidence=7, amount=-5.00)
+    make_tx(client, model_category="Shopping",  model_confidence=6, amount=-20.00)
+
+    data = {r["category"]: r["total"] for r in client.get("/api/summary/by-model-category").json()}
+
+    assert data["Groceries"] == -15.00
+    assert data["Shopping"] == -20.00
+
+
+def test_by_model_category_excludes_pending(client):
+    make_tx(client, model_category=None, model_confidence=-1, amount=-50.00)
+    r = client.get("/api/summary/by-model-category")
+    assert r.json() == []
+
+
+def test_by_model_category_excludes_null_category(client):
+    make_tx(client, model_category=None, model_confidence=None, amount=-50.00)
+    r = client.get("/api/summary/by-model-category")
+    assert r.json() == []
+
+
 # ── /api/summary/by-month ─────────────────────────────────────────────────────
 
 def test_by_month_empty(client):

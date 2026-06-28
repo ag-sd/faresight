@@ -36,7 +36,7 @@ class Transaction(Base):
     account_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)
     # AI-suggested category for human review; never overwrites `category`.
     model_category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    model_confidence: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    model_confidence: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=-1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

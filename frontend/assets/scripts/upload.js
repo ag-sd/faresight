@@ -133,6 +133,41 @@ function showResultModal(results) {
   new bootstrap.Modal(document.getElementById('resultModal')).show();
 }
 
+// ── Categorization tracker ────────────────────────────────────────────────────
+
+async function refreshCategorizerStatus() {
+  const s = await api('/api/categorizer/status');
+  const total = s.pending + s.categorized;
+  const tracker = document.getElementById('categorizerTracker');
+
+  if (total === 0) { tracker.classList.add('d-none'); return; }
+  tracker.classList.remove('d-none');
+
+  const pct = Math.round(s.categorized / total * 100);
+  const bar = document.getElementById('categorizerBar');
+  bar.style.width = pct + '%';
+
+  if (s.pending === 0) {
+    bar.classList.remove('progress-bar-striped', 'progress-bar-animated', 'bg-primary');
+    bar.classList.add('bg-success');
+    document.getElementById('categorizerText').textContent = 'All transactions categorized';
+    document.getElementById('categorizerCount').textContent = `${s.categorized} total`;
+  } else {
+    bar.classList.add('progress-bar-striped', 'progress-bar-animated', 'bg-primary');
+    bar.classList.remove('bg-success');
+    let text = `${s.pending} transaction${s.pending !== 1 ? 's' : ''} pending…`;
+    if (s.throughput_ema) {
+      const etaSec = s.pending / s.throughput_ema;
+      const eta = etaSec < 90
+        ? `~${Math.round(etaSec)}s remaining`
+        : `~${Math.round(etaSec / 60)} min remaining`;
+      text = `${s.pending} transaction${s.pending !== 1 ? 's' : ''} pending — ${eta}`;
+    }
+    document.getElementById('categorizerText').textContent = text;
+    document.getElementById('categorizerCount').textContent = `${s.categorized} / ${total}`;
+  }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init() {
@@ -159,3 +194,5 @@ async function init() {
 }
 
 init();
+refreshCategorizerStatus();
+setInterval(refreshCategorizerStatus, 10000);

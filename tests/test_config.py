@@ -31,6 +31,17 @@ def test_sync_interval_is_int():
     assert cfg.SYNC_INTERVAL_MINUTES > 0
 
 
+def test_ollama_host_set():
+    assert isinstance(cfg.OLLAMA_HOST, str)
+    assert cfg.OLLAMA_HOST
+    assert cfg.OLLAMA_HOST.startswith("http")
+
+
+def test_ollama_model_set():
+    assert isinstance(cfg.OLLAMA_MODEL, str)
+    assert cfg.OLLAMA_MODEL
+
+
 def test_faresight_db_env_overrides_config(monkeypatch, tmp_path):
     override = str(tmp_path / "test.db")
     monkeypatch.setenv("FARESIGHT_DB", override)

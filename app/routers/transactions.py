@@ -1,15 +1,19 @@
+import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import extract, func
+from sqlalchemy import case, extract, func
 from sqlalchemy.orm import Session
 
+from app.categorizer import PENDING_CONFIDENCE, _cat_status
 from app.database import get_db
 from app.importers import IMPORTERS
 from app.models import Account, Transaction
 from app.schemas import TransactionCreate, TransactionOut, TransactionUpdate
 
 router = APIRouter(prefix="/api", tags=["transactions"])
+
+logger = logging.getLogger(__name__)
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
@@ -77,6 +81,20 @@ def summary_by_category(db: Session = Depends(get_db)):
     return [{"category": r.category, "total": round(r.total, 2)} for r in rows]
 
 
+@router.get("/summary/by-model-category")
+def summary_by_model_category(db: Session = Depends(get_db)):
+    rows = (
+        db.query(Transaction.model_category, func.sum(Transaction.amount).label("total"))
+        .filter(
+            Transaction.model_category.isnot(None),
+            Transaction.model_confidence != PENDING_CONFIDENCE,
+        )
+        .group_by(Transaction.model_category)
+        .all()
+    )
+    return [{"category": r.model_category, "total": round(r.total, 2)} for r in rows]
+
+
 @router.get("/summary/by-month")
 def summary_by_month(db: Session = Depends(get_db)):
     rows = (
@@ -93,6 +111,30 @@ def summary_by_month(db: Session = Depends(get_db)):
         {"year": int(r.year), "month": int(r.month), "total": round(r.total, 2)}
         for r in rows
     ]
+
+
+# ── Categorizer status ────────────────────────────────────────────────────────
+
+@router.get("/categorizer/status")
+def categorizer_status(db: Session = Depends(get_db)):
+    row = db.query(
+        func.sum(case(
+            (Transaction.model_confidence == PENDING_CONFIDENCE, 1), else_=0
+        )).label("pending"),
+        func.sum(case(
+            (
+                Transaction.model_confidence.isnot(None) &
+                (Transaction.model_confidence != PENDING_CONFIDENCE),
+                1,
+            ),
+            else_=0,
+        )).label("categorized"),
+    ).one()
+    return {
+        "pending": int(row.pending or 0),
+        "categorized": int(row.categorized or 0),
+        "throughput_ema": _cat_status["throughput_ema"],
+    }
 
 
 # ── Import ────────────────────────────────────────────────────────────────────
@@ -118,13 +160,18 @@ async def import_bulk(
     import_fn = IMPORTERS[importer]
     results = []
 
+    parsed = []
     for file in files:
         file_bytes = await file.read()
         result = import_fn(file_bytes, account)
+        parsed.append((file.filename, result))
+
+    for filename, result in parsed:
         for tx in result.transactions:
+            tx.model_confidence = PENDING_CONFIDENCE
             db.add(Transaction(**tx.model_dump()))
         results.append({
-            "filename": file.filename,
+            "filename": filename,
             "imported": len(result.transactions),
             "errors": result.errors,
         })

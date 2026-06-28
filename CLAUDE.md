@@ -35,7 +35,7 @@ Routes are split into routers under `app/routers/`:
 - `app/routers/accounts.py` — account management (`/api/accounts`, `/api/accounts/bank-logos`)
 - `app/routers/sync.py` — NAS sync control (`/api/sync`, `/api/sync/status`, `/api/sync/go-offline`)
 
-`app/faresight.py` wires the routers, mounts `/static → frontend/`, handles the lifespan (DB creation → `migrate_db()` → `sync_from_nas()` → periodic sync loop → shutdown push), and serves the two HTML pages at `/` and `/accounts`.
+.`app/faresight.py` wires the routers, mounts `/static → frontend/`, handles the lifespan (DB creation → `migrate_db()` → `sync_from_nas()` → periodic sync loop + categorization loop → shutdown push), and serves the two HTML pages at `/` and `/accounts`.
 
 **Schema migrations** are handled by `migrate_db()` in `app/database.py` — raw `ALTER TABLE` / `RENAME COLUMN` SQL against the live SQLite file. Add new migrations there when adding columns to existing tables.
 
@@ -128,6 +128,41 @@ The `autouse=True` `reset_status` fixture in `tests/test_sync.py` resets all six
 - Import functions are registered by name in `app/importers/__init__.py` — the module itself does **not** own its display name.
 - **Debit columns = negative amounts; credit columns = positive amounts.** This is an invariant across all importers. A debit is a charge the account holder owes; a credit is a payment or refund reducing the balance.
 - Sample fixture CSVs for each importer live in `tests/` (e.g. `tests/capitalone_sample.csv`).
+
+## Transaction categorization (`app/categorizer.py`)
+
+Categorization runs asynchronously via a background worker started at app startup — it does
+**not** block the upload response. The suggestion is written to `model_category` /
+`model_confidence` and **never** overwrites the human-facing `category`.
+
+**`model_confidence` sentinel values:**
+- `None` — legacy only; not present in normal flow after the `-1` default was introduced
+- `-1` (`PENDING_CONFIDENCE`) — queued for categorization, not yet processed (default for all new rows)
+- `0–10` — categorized (0 = fallback / low confidence, 10 = highest)
+
+`TransactionOut` maps `-1 → null` before returning to clients so the API surface stays clean.
+
+**Upload flow** (`import_bulk` in `app/routers/transactions.py`): parsed rows are saved
+immediately with `model_confidence = -1`. No Ollama call on the hot path.
+
+**Background worker** (`_categorization_loop` / `_categorize_pending` in `app/categorizer.py`):
+an asyncio task (started in `lifespan`) polls every `categorization_poll_interval_s` seconds
+(config default: 10). Each cycle opens its own `SessionLocal()` session, queries for `-1` rows,
+pipes them through `categorize_transactions()` (batched), and writes results back. If Ollama is
+down, the rows stay at `-1` and are retried next cycle.
+
+- `ALLOWED_CATEGORIES` is the single module-level constant shared by the prompt builder and the
+  validator. Confidence is an int on a 0–10 scale.
+- `BATCH_SIZE = 5`. A batch failure never aborts the run: parse/infer failures retry once, then
+  fall back to `"Other"` / confidence 0.
+- `ensure_ollama_running()` health-checks `{OLLAMA_HOST}/api/tags`, starts `ollama serve` if down
+  (detached, never killed), polls up to 30s, and confirms the model is present.
+- `build_prompt()` is currently a **stub** — real prompt engineering lands later.
+- HTTP/process touch-points are isolated as `_get_tags`, `_start_ollama`, `_generate` so tests
+  monkeypatch them and never hit a real server. `OLLAMA_HOST` lives in `app/config.py` /
+  `config.yaml` (default `http://localhost:11434`).
+- SQLite WAL mode is enabled in `app/database.py` to prevent write contention between the
+  background worker and request handlers.
 
 ## What is NOT implemented yet
 

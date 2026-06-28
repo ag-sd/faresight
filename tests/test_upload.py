@@ -1,9 +1,8 @@
 import pathlib
 
-import pytest
-
 SAMPLE_CSV = pathlib.Path(__file__).parent / "capitalone_sample.csv"
 CAPONE_IMPORTER = "Capital One Credit Card"
+
 
 
 def _make_account(client):
@@ -170,3 +169,103 @@ def test_import_bulk_errors_do_not_block_other_files(client):
     assert len(bad["errors"]) == 1
     assert good["imported"] == 13
     assert good["errors"] == []
+
+
+# ── Categorization wiring ─────────────────────────────────────────────────────
+
+def test_import_bulk_marks_transactions_pending(client):
+    """Uploaded transactions are saved with model_confidence=-1 (pending sentinel)."""
+    acct = _make_account(client)
+    csv_bytes = SAMPLE_CSV.read_bytes()
+    client.post(
+        "/api/transactions/import-bulk",
+        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
+    )
+    txs = client.get("/api/transactions").json()
+    assert all(tx["model_confidence"] is None for tx in txs)
+    assert all(tx["model_category"] is None for tx in txs)
+
+
+def test_import_bulk_all_files_marked_pending(client):
+    """All transactions across multiple uploaded files are marked pending."""
+    acct = _make_account(client)
+    csv_bytes = SAMPLE_CSV.read_bytes()
+    client.post(
+        "/api/transactions/import-bulk",
+        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        files=[
+            ("files", ("jan.csv", csv_bytes, "text/csv")),
+            ("files", ("feb.csv", csv_bytes, "text/csv")),
+        ],
+    )
+    txs = client.get("/api/transactions").json()
+    assert len(txs) == 26
+    assert all(tx["model_confidence"] is None for tx in txs)
+
+
+# ── GET /api/categorizer/status ───────────────────────────────────────────────
+
+def test_categorizer_status_empty(client):
+    r = client.get("/api/categorizer/status")
+    assert r.status_code == 200
+    assert r.json()["pending"] == 0
+    assert r.json()["categorized"] == 0
+
+
+def test_categorizer_status_after_import(client):
+    """All imported transactions count as pending immediately after upload."""
+    acct = _make_account(client)
+    csv_bytes = SAMPLE_CSV.read_bytes()
+    client.post(
+        "/api/transactions/import-bulk",
+        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
+    )
+    r = client.get("/api/categorizer/status").json()
+    assert r["pending"] == 13
+    assert r["categorized"] == 0
+
+
+def test_categorizer_status_after_categorization(client):
+    """Rows whose model_confidence is updated move from pending to categorized."""
+    from app.models import Transaction as Tx
+    from tests.conftest import TestingSession
+
+    acct = _make_account(client)
+    csv_bytes = SAMPLE_CSV.read_bytes()
+    client.post(
+        "/api/transactions/import-bulk",
+        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
+    )
+    # Simulate the background worker writing back results for 5 rows.
+    db = TestingSession()
+    db.query(Tx).filter(Tx.id <= 5).update(
+        {"model_confidence": 7, "model_category": "Shopping"}
+    )
+    db.commit()
+    db.close()
+
+    r = client.get("/api/categorizer/status").json()
+    assert r["pending"] == 8
+    assert r["categorized"] == 5
+
+
+def test_categorizer_status_excludes_null_confidence(client):
+    """Legacy rows with model_confidence IS NULL are not counted in either bucket."""
+    from sqlalchemy import text
+    from tests.conftest import TestingSession
+
+    # Use raw SQL to bypass the ORM default so the row lands with NULL confidence.
+    db = TestingSession()
+    db.execute(text(
+        "INSERT INTO transactions (date, description, amount, category, model_confidence)"
+        " VALUES ('2026-01-01', 'legacy row', -5.0, 'Food', NULL)"
+    ))
+    db.commit()
+    db.close()
+
+    r = client.get("/api/categorizer/status").json()
+    assert r["pending"] == 0
+    assert r["categorized"] == 0
