@@ -18,6 +18,18 @@ _engine = create_engine(
 TestingSession = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 
 
+class _FakeProc:
+    def terminate(self): pass
+    def wait(self, timeout=None): pass
+    def kill(self): pass
+
+
+@pytest.fixture(autouse=True)
+def no_categorizer_subprocess(monkeypatch):
+    """Prevent the lifespan from spawning a real categorizer process during tests."""
+    monkeypatch.setattr("app.faresight._spawn_categorizer", lambda: _FakeProc())
+
+
 @pytest.fixture(autouse=True)
 def reset_db():
     """Drop and recreate all tables before every test for full isolation."""

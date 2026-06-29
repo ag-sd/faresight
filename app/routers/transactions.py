@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import case, extract, func
 from sqlalchemy.orm import Session
 
-from app.categorizer import PENDING_CONFIDENCE, _cat_status
+from app.categorizer import PENDING_CONFIDENCE
 from app.database import get_db
 from app.importers import IMPORTERS
 from app.models import Account, Transaction
@@ -133,7 +133,6 @@ def categorizer_status(db: Session = Depends(get_db)):
     return {
         "pending": int(row.pending or 0),
         "categorized": int(row.categorized or 0),
-        "throughput_ema": _cat_status["throughput_ema"],
     }
 
 

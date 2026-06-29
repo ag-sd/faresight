@@ -155,14 +155,7 @@ async function refreshCategorizerStatus() {
   } else {
     bar.classList.add('progress-bar-striped', 'progress-bar-animated', 'bg-primary');
     bar.classList.remove('bg-success');
-    let text = `${s.pending} transaction${s.pending !== 1 ? 's' : ''} pending…`;
-    if (s.throughput_ema) {
-      const etaSec = s.pending / s.throughput_ema;
-      const eta = etaSec < 90
-        ? `~${Math.round(etaSec)}s remaining`
-        : `~${Math.round(etaSec / 60)} min remaining`;
-      text = `${s.pending} transaction${s.pending !== 1 ? 's' : ''} pending — ${eta}`;
-    }
+    const text = `${s.pending} transaction${s.pending !== 1 ? 's' : ''} pending…`;
     document.getElementById('categorizerText').textContent = text;
     document.getElementById('categorizerCount').textContent = `${s.categorized} / ${total}`;
   }

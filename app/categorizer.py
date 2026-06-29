@@ -1,9 +1,13 @@
 """AI transaction categorization via a local Ollama server.
 
-Imported transactions are saved with model_confidence=-1 (pending). A background
-async task (_categorization_loop) polls for those rows, annotates them with a
-*suggested* category + confidence (model_category, model_confidence), and writes
-the results back. The suggestion never overwrites the human-facing `category` field.
+Imported transactions are saved with model_confidence=-1 (pending). This module
+runs as a standalone subprocess (`python -m app.categorizer`) that polls for
+those rows, annotates them with a *suggested* category + confidence
+(model_category, model_confidence), and writes the results back. The suggestion
+never overwrites the human-facing `category` field.
+
+Run independently for debugging:
+    FARESIGHT_DB=/path/to/db.db python -m app.categorizer
 
 The HTTP/subprocess touch-points are isolated as small module-level helpers
 (`_get_tags`, `_start_ollama`, `_generate`) so tests can monkeypatch them
@@ -14,7 +18,6 @@ model_confidence sentinel values:
   -1    — pending: queued for categorization, not yet processed (default for all new rows)
   0–10  — categorized (0 = fallback / low confidence, 10 = highest)
 """
-import asyncio
 import json
 import logging
 import subprocess
@@ -58,26 +61,6 @@ _CONFIDENCE_MAX = 10
 # Sentinel written to model_confidence when a transaction is queued for categorization.
 PENDING_CONFIDENCE = -1
 
-# ── Throughput tracking state ────────────────────────────────────────────────────
-# Read by GET /api/categorizer/status to surface ETA to the upload page.
-
-_cat_status: dict = {
-    # Exponential moving average of categorization throughput in tx/sec.
-    # Measured end-to-end between consecutive productive cycles (includes the
-    # sleep between them), so it reflects the user-visible rate rather than
-    # raw Ollama inference speed.  None until at least two productive cycles
-    # have been observed (need a before/after pair to compute elapsed time).
-    "throughput_ema": None,
-    # time.monotonic() recorded at the end of the last cycle that processed
-    # at least one row.  Used as the start reference for the next interval.
-    "last_cycle_end": None,
-}
-
-# EMA smoothing factor.  0.3 means each new cycle contributes ~30%; after
-# three cycles the most recent data carries ~66% of the total weight.
-# Fast enough to track genuine speed changes; slow enough to ignore spikes.
-_EMA_ALPHA = 0.3
-
 
 # ── Ollama HTTP/process seams (monkeypatched in tests) ──────────────────────────
 
@@ -102,6 +85,7 @@ def _start_ollama() -> None:
 
 def _generate(prompt: str) -> str:
     """POST a prompt to {OLLAMA_HOST}/api/generate and return the raw response text."""
+    t0 = time.monotonic()
     resp = httpx.post(
         f"{OLLAMA_HOST}/api/generate",
         json={
@@ -114,6 +98,7 @@ def _generate(prompt: str) -> str:
         timeout=120.0,
     )
     resp.raise_for_status()
+    logger.info("Ollama inference: %.2fs", time.monotonic() - t0)
     return resp.json()["response"]
 
 
@@ -231,6 +216,7 @@ def _apply_results(results: list[dict], index: dict[int, "TransactionCreate"]) -
     seen: set[int] = set()
 
     for item in results:
+        logger.info(f"Processing {item}")
         if not isinstance(item, dict):
             continue
         tid = item.get("id")
@@ -286,8 +272,11 @@ def _categorize_batch(
     retried = False
     for attempt in range(2):
         try:
-            raw = _generate(build_prompt(items))
+            prompt = build_prompt(items)
+            logger.info(f"Making call to Ollama")
+            raw = _generate(prompt)
             results = _parse_results(raw)
+            logger.info(f"Ollama returned results {results}")
         except Exception as e:  # noqa: BLE001 — small models drift; be defensive
             if attempt == 0:
                 retried = True
@@ -303,49 +292,18 @@ def _categorize_batch(
     return len(index), len(index), retried
 
 
-def categorize_transactions(
-    transactions: list["TransactionCreate"],
-) -> list["TransactionCreate"]:
-    """Annotate each transaction with a suggested model_category/model_confidence.
-
-    Processes in batches of BATCH_SIZE. A failure in one batch never aborts the
-    whole run. Mutates and returns the same list.
-    """
-    if not transactions:
-        return transactions
-
-    ensure_ollama_running()
-
-    for start in range(0, len(transactions), BATCH_SIZE):
-        batch = transactions[start:start + BATCH_SIZE]
-        index = {start + i: tx for i, tx in enumerate(batch)}
-        items = [
-            {"id": start + i, "description": tx.description, "amount": tx.amount}
-            for i, tx in enumerate(batch)
-        ]
-        batch_no = start // BATCH_SIZE + 1
-        try:
-            processed, fell_back, retried = _categorize_batch(items, index)
-        except Exception as e:  # noqa: BLE001 — isolate unexpected per-batch errors
-            logger.warning("Batch %d crashed (%s); marking needs-attention", batch_no, e)
-            _mark_batch_fallback(index)
-            processed, fell_back, retried = len(index), len(index), False
-        logger.info(
-            "Batch %d: processed=%d fell_back_to_%s=%d retried=%s",
-            batch_no, processed, FALLBACK_CATEGORY, fell_back, retried,
-        )
-
-    return transactions
-
-
 # ── Background polling worker ───────────────────────────────────────────────────
 
 def _categorize_pending(db) -> int:
-    """Query rows with model_confidence=-1, categorize them, write results back.
+    """Query rows with model_confidence=-1, categorize and commit them batch by batch.
+
+    Processes BATCH_SIZE rows at a time, committing each batch to the DB before
+    starting the next. A crash mid-cycle leaves already-committed batches intact;
+    remaining rows stay at -1 and are picked up on the next poll cycle.
 
     Uses the provided SQLAlchemy session (caller manages lifecycle). Returns the
-    number of rows processed. Skips rows with model_confidence=None (manually
-    created transactions that were never submitted for categorization).
+    number of rows processed. Skips rows with model_confidence=None (legacy rows
+    that were never submitted for categorization).
     """
     from app.models import Transaction
     from app.schemas import TransactionCreate
@@ -358,63 +316,89 @@ def _categorize_pending(db) -> int:
         return 0
 
     logger.info("Categorizer: found %d pending transaction(s) — starting inference", len(rows))
+    cycle_start = time.monotonic()
 
-    txs = [
-        TransactionCreate(
-            date=row.date,
-            description=row.description,
-            amount=row.amount,
-            category=row.category,
-            model_confidence=PENDING_CONFIDENCE,
-        )
-        for row in rows
-    ]
+    total_processed = 0
+    for batch_start in range(0, len(rows), BATCH_SIZE):
+        batch_rows = rows[batch_start : batch_start + BATCH_SIZE]
+        batch_no = batch_start // BATCH_SIZE + 1
 
-    categorize_transactions(txs)
+        # Health-check per batch: Ollama may have exited between batches.
+        ensure_ollama_running()
 
-    for row, tx in zip(rows, txs):
-        row.model_category = tx.model_category
-        row.model_confidence = tx.model_confidence
-
-    db.commit()
-    logger.info("Categorizer: finished — %d transaction(s) written back", len(rows))
-
-    # Update throughput EMA — only on productive cycles.
-    # Elapsed time is measured end-to-end between consecutive productive cycles
-    # (wall time including the sleep), giving the user-visible categorization rate.
-    now = time.monotonic()
-    prev_end = _cat_status["last_cycle_end"]
-    if prev_end is not None:
-        elapsed = now - prev_end
-        if elapsed > 0:
-            cycle_tput = len(rows) / elapsed
-            prev_ema = _cat_status["throughput_ema"]
-            _cat_status["throughput_ema"] = (
-                cycle_tput if prev_ema is None        # first observation — no prior EMA
-                else _EMA_ALPHA * cycle_tput + (1 - _EMA_ALPHA) * prev_ema
+        txs = [
+            TransactionCreate(
+                date=row.date,
+                description=row.description,
+                amount=row.amount,
+                category=row.category,
+                model_confidence=PENDING_CONFIDENCE,
             )
-    # Record end-of-cycle timestamp as the baseline for the next interval.
-    _cat_status["last_cycle_end"] = now
+            for row in batch_rows
+        ]
+        index = {i: tx for i, tx in enumerate(txs)}
+        items = [
+            {"id": i, "description": tx.description, "amount": tx.amount}
+            for i, tx in enumerate(txs)
+        ]
 
-    return len(rows)
+        try:
+            processed, fell_back, retried = _categorize_batch(items, index)
+        except Exception as e:  # noqa: BLE001 — isolate unexpected per-batch errors
+            logger.warning("Batch %d crashed (%s); marking fallback", batch_no, e)
+            _mark_batch_fallback(index)
+            processed, fell_back, retried = len(index), len(index), False
 
+        for row, tx in zip(batch_rows, txs):
+            row.model_category = tx.model_category
+            row.model_confidence = tx.model_confidence
 
-async def _categorization_loop() -> None:
-    """Background async task: polls every CATEGORIZATION_POLL_INTERVAL_S seconds
-    for transactions with model_confidence=-1 and categorizes them."""
-    from app.database import SessionLocal
+        db.commit()
+        total_processed += len(batch_rows)
+        logger.info(
+            "Batch %d: processed=%d fell_back_to_%s=%d retried=%s (committed)",
+            batch_no, processed, FALLBACK_CATEGORY, fell_back, retried,
+        )
 
     logger.info(
-        "Categorization loop started (poll interval: %ds)", CATEGORIZATION_POLL_INTERVAL_S
+        "Categorizer: cycle complete — %d written back in %.2fs",
+        total_processed, time.monotonic() - cycle_start,
     )
-    while True:
-        await asyncio.sleep(CATEGORIZATION_POLL_INTERVAL_S)
+    return total_processed
+
+
+if __name__ == "__main__":
+    import signal
+    import sys
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stdout,
+    )
+
+    from app.database import SessionLocal
+
+    _shutdown = False
+
+    def _handle_term(signum, frame):
+        global _shutdown
+        logger.info("Categorizer: SIGTERM received, shutting down")
+        _shutdown = True
+
+    signal.signal(signal.SIGTERM, _handle_term)
+
+    logger.info("Categorizer worker started (poll interval: %ds)", CATEGORIZATION_POLL_INTERVAL_S)
+    while not _shutdown:
+        time.sleep(CATEGORIZATION_POLL_INTERVAL_S)
+        if _shutdown:
+            break
         logger.info("Categorizer: poll cycle waking up")
         db = SessionLocal()
         try:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, _categorize_pending, db)
+            _categorize_pending(db)
         except Exception:
             logger.warning("Categorization poll cycle failed", exc_info=True)
         finally:
             db.close()
+    logger.info("Categorizer: worker exiting")

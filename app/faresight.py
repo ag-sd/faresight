@@ -1,18 +1,23 @@
 from contextlib import asynccontextmanager, suppress
+import asyncio
 import logging
 from pathlib import Path
-import asyncio
+import subprocess
+import sys
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.categorizer import _categorization_loop
 from app.database import Base, engine, migrate_db
 from app.routers import accounts, sync, transactions
 import app.sync as sync_mod
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s: %(message)s")
+
+
+def _spawn_categorizer() -> subprocess.Popen:
+    return subprocess.Popen([sys.executable, "-m", "app.categorizer"])
 
 
 @asynccontextmanager
@@ -25,14 +30,16 @@ async def lifespan(app: FastAPI):
     # to the NAS-pulled file.
     engine.dispose()
     sync_task = asyncio.create_task(sync_mod._periodic_sync_loop())
-    cat_task = asyncio.create_task(_categorization_loop())
+    cat_proc = _spawn_categorizer()
     yield
     sync_task.cancel()
-    cat_task.cancel()
     with suppress(asyncio.CancelledError):
         await sync_task
-    with suppress(asyncio.CancelledError):
-        await cat_task
+    cat_proc.terminate()
+    try:
+        cat_proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        cat_proc.kill()
     sync_mod.sync_to_nas()
     sync_mod._release_lock()
 

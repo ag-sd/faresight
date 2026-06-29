@@ -145,80 +145,13 @@ def test_apply_other_from_model_preserves_confidence():
     assert t.model_confidence == 3
 
 
-# ── categorize_transactions (full pipeline) ─────────────────────────────────────
+# ── _categorize_pending ──────────────────────────────────────────────────────────
 
 def _good_generate(prompt):
     batch = json.loads(prompt.split("TRANSACTIONS:\n", 1)[1])
     return json.dumps({
         "results": [{"id": it["id"], "category": "Shopping", "confidence": 6} for it in batch]
     })
-
-
-def test_categorize_empty_is_noop_and_skips_ollama(monkeypatch):
-    monkeypatch.setattr(cz, "ensure_ollama_running",
-                        lambda: pytest.fail("should not be called for empty input"))
-    assert cz.categorize_transactions([]) == []
-
-
-def test_categorize_batches_by_batch_size(monkeypatch):
-    monkeypatch.setattr(cz, "ensure_ollama_running", lambda: None)
-    calls = []
-
-    def spy_generate(prompt):
-        calls.append(prompt)
-        return _good_generate(prompt)
-
-    monkeypatch.setattr(cz, "_generate", spy_generate)
-    txs = [tx(f"t{i}") for i in range(cz.BATCH_SIZE * 4 + 3)]
-    cz.categorize_transactions(txs)
-
-    assert len(calls) == 5  # 4 full batches + 1 partial
-    assert all(t.model_category == "Shopping" and t.model_confidence == 6 for t in txs)
-
-
-def test_categorize_isolates_per_batch_failure(monkeypatch):
-    monkeypatch.setattr(cz, "ensure_ollama_running", lambda: None)
-
-    def flaky_generate(prompt):
-        batch = json.loads(prompt.split("TRANSACTIONS:\n", 1)[1])
-        if batch[0]["id"] >= 20:  # second batch always fails
-            raise RuntimeError("boom")
-        return _good_generate(prompt)
-
-    monkeypatch.setattr(cz, "_generate", flaky_generate)
-    txs = [tx(f"t{i}") for i in range(25)]
-    cz.categorize_transactions(txs)
-
-    assert all(t.model_category == "Shopping" for t in txs[:20])
-    assert all(t.model_category == "Other" and t.model_confidence == 0 for t in txs[20:])
-
-
-def test_categorize_retries_once_then_falls_back_on_parse_failure(monkeypatch):
-    monkeypatch.setattr(cz, "ensure_ollama_running", lambda: None)
-    calls = []
-
-    def bad_generate(prompt):
-        calls.append(prompt)
-        return "this is not json"
-
-    monkeypatch.setattr(cz, "_generate", bad_generate)
-    txs = [tx("a"), tx("b"), tx("c")]
-    cz.categorize_transactions(txs)
-
-    assert len(calls) == 2  # original + one retry
-    assert all(t.model_category == "Other" and t.model_confidence == 0 for t in txs)
-
-
-def test_categorize_isolates_unexpected_batch_crash(monkeypatch):
-    monkeypatch.setattr(cz, "ensure_ollama_running", lambda: None)
-    monkeypatch.setattr(cz, "_categorize_batch",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("kaboom")))
-    txs = [tx("a"), tx("b")]
-    cz.categorize_transactions(txs)  # must not raise
-    assert all(t.model_category == "Other" and t.model_confidence == 0 for t in txs)
-
-
-# ── _categorize_pending ──────────────────────────────────────────────────────────
 
 def _make_row(db, description="Coffee", amount=-5.0, confidence=PENDING_CONFIDENCE):
     row = Transaction(
@@ -305,6 +238,51 @@ def test_categorize_pending_rows_stay_pending_when_ollama_unreachable(monkeypatc
         db.close()
 
 
+def test_categorize_pending_commits_each_batch_independently(monkeypatch):
+    """First batch committed before Ollama dies on the second batch check."""
+    call_count = {"n": 0}
+
+    def ollama_dies_on_second_call():
+        call_count["n"] += 1
+        if call_count["n"] > 1:
+            raise RuntimeError("Ollama died")
+
+    monkeypatch.setattr(cz, "ensure_ollama_running", ollama_dies_on_second_call)
+    monkeypatch.setattr(cz, "_generate", _good_generate)
+
+    db = TestingSession()
+    try:
+        for i in range(cz.BATCH_SIZE + 1):
+            _make_row(db, description=f"tx{i}")
+
+        with pytest.raises(RuntimeError, match="Ollama died"):
+            cz._categorize_pending(db)
+
+        committed = db.query(Transaction).filter(
+            Transaction.model_confidence != PENDING_CONFIDENCE
+        ).count()
+        assert committed == cz.BATCH_SIZE
+    finally:
+        db.close()
+
+
+def test_categorize_pending_checks_ollama_per_batch(monkeypatch):
+    """ensure_ollama_running is called once per batch, not once per cycle."""
+    calls = {"n": 0}
+    monkeypatch.setattr(cz, "ensure_ollama_running",
+                        lambda: calls.__setitem__("n", calls["n"] + 1))
+    monkeypatch.setattr(cz, "_generate", _good_generate)
+
+    db = TestingSession()
+    try:
+        for i in range(cz.BATCH_SIZE + 1):  # two batches
+            _make_row(db, description=f"tx{i}")
+        cz._categorize_pending(db)
+        assert calls["n"] == 2
+    finally:
+        db.close()
+
+
 # ── TransactionOut sentinel mapping ─────────────────────────────────────────────
 
 def _out(model_confidence):
@@ -335,77 +313,3 @@ def test_transaction_out_preserves_null_confidence():
     assert _out(None).model_confidence is None
 
 
-# ── Throughput EMA ──────────────────────────────────────────────────────────────
-
-@pytest.fixture()
-def reset_cat_status():
-    """Reset module-level EMA state before and after each EMA test."""
-    cz._cat_status["throughput_ema"] = None
-    cz._cat_status["last_cycle_end"] = None
-    yield
-    cz._cat_status["throughput_ema"] = None
-    cz._cat_status["last_cycle_end"] = None
-
-
-def test_throughput_ema_none_after_first_cycle(monkeypatch, reset_cat_status):
-    """First productive cycle sets last_cycle_end but cannot compute EMA yet (no baseline)."""
-    monkeypatch.setattr(cz, "ensure_ollama_running", lambda: None)
-    monkeypatch.setattr(cz, "_generate", _good_generate)
-    ticks = iter([10.0])
-    monkeypatch.setattr(cz.time, "monotonic", lambda: next(ticks))
-
-    db = TestingSession()
-    try:
-        _make_row(db)
-        cz._categorize_pending(db)
-    finally:
-        db.close()
-
-    assert cz._cat_status["throughput_ema"] is None   # no prior baseline
-    assert cz._cat_status["last_cycle_end"] == 10.0
-
-
-def test_throughput_ema_computed_after_second_cycle(monkeypatch, reset_cat_status):
-    """Second productive cycle has a baseline — EMA is set to the first observation."""
-    monkeypatch.setattr(cz, "ensure_ollama_running", lambda: None)
-    monkeypatch.setattr(cz, "_generate", _good_generate)
-    # Cycle 1 ends at t=10; cycle 2 ends at t=20 → elapsed=10s, 1 tx → 0.1 tx/s.
-    ticks = iter([10.0, 20.0])
-    monkeypatch.setattr(cz.time, "monotonic", lambda: next(ticks))
-
-    db = TestingSession()
-    try:
-        _make_row(db, description="tx1")
-        cz._categorize_pending(db)   # cycle 1: sets baseline, no EMA yet
-
-        _make_row(db, description="tx2")
-        cz._categorize_pending(db)   # cycle 2: elapsed=10s, EMA = 0.1
-    finally:
-        db.close()
-
-    assert cz._cat_status["throughput_ema"] == pytest.approx(0.1)
-
-
-def test_throughput_ema_smoothing(monkeypatch, reset_cat_status):
-    """Third cycle with a different rate produces a blended EMA value."""
-    monkeypatch.setattr(cz, "ensure_ollama_running", lambda: None)
-    monkeypatch.setattr(cz, "_generate", _good_generate)
-    # Cycle 1: t=10 (baseline). Cycle 2: t=20 (10s, 0.1 tx/s). Cycle 3: t=25 (5s, 0.2 tx/s).
-    ticks = iter([10.0, 20.0, 25.0])
-    monkeypatch.setattr(cz.time, "monotonic", lambda: next(ticks))
-
-    db = TestingSession()
-    try:
-        _make_row(db, description="tx1")
-        cz._categorize_pending(db)   # cycle 1: baseline
-
-        _make_row(db, description="tx2")
-        cz._categorize_pending(db)   # cycle 2: EMA = 0.1
-
-        _make_row(db, description="tx3")
-        cz._categorize_pending(db)   # cycle 3: rate=0.2, EMA = 0.3*0.2 + 0.7*0.1
-    finally:
-        db.close()
-
-    expected = cz._EMA_ALPHA * 0.2 + (1 - cz._EMA_ALPHA) * 0.1
-    assert cz._cat_status["throughput_ema"] == pytest.approx(expected)
