@@ -9,7 +9,7 @@ from app.categorizer import PENDING_CONFIDENCE
 from app.database import get_db
 from app.importers import IMPORTERS
 from app.models import Account, Transaction
-from app.schemas import TransactionCreate, TransactionOut, TransactionUpdate
+from app.schemas import PaginatedTransactions, TransactionCreate, TransactionOut, TransactionUpdate
 
 router = APIRouter(prefix="/api", tags=["transactions"])
 
@@ -18,15 +18,20 @@ logger = logging.getLogger(__name__)
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
-@router.get("/transactions", response_model=list[TransactionOut])
+@router.get("/transactions", response_model=PaginatedTransactions)
 def list_transactions(
     category: Optional[str] = None,
+    page: int = 1,
+    limit: int = 25,
     db: Session = Depends(get_db),
 ):
+    offset = (page - 1) * limit
     q = db.query(Transaction)
     if category:
         q = q.filter(Transaction.category == category)
-    return q.order_by(Transaction.date.desc()).all()
+    total = q.count()
+    data = q.order_by(Transaction.date.desc()).offset(offset).limit(limit).all()
+    return {"data": data, "limit": limit, "offset": offset, "total": total}
 
 
 @router.post("/transactions", response_model=TransactionOut, status_code=201)
@@ -111,6 +116,26 @@ def summary_by_month(db: Session = Depends(get_db)):
         {"year": int(r.year), "month": int(r.month), "total": round(r.total, 2)}
         for r in rows
     ]
+
+
+@router.get("/summary/by-category-for-period")
+def summary_by_category_for_period(
+    year: int,
+    month: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    q = (
+        db.query(Transaction.model_category, func.sum(Transaction.amount).label("total"))
+        .filter(
+            Transaction.model_category.isnot(None),
+            Transaction.model_confidence != PENDING_CONFIDENCE,
+            extract("year", Transaction.date) == year,
+        )
+    )
+    if month is not None:
+        q = q.filter(extract("month", Transaction.date) == month)
+    rows = q.group_by(Transaction.model_category).all()
+    return [{"category": r.model_category, "total": round(r.total, 2)} for r in rows]
 
 
 # ── Categorizer status ────────────────────────────────────────────────────────

@@ -58,21 +58,26 @@ def test_create_invalid_date_returns_422(client):
 def test_list_empty(client):
     r = client.get("/api/transactions")
     assert r.status_code == 200
-    assert r.json() == []
+    body = r.json()
+    assert body["data"] == []
+    assert body["total"] == 0
+    assert body["limit"] == 25
+    assert body["offset"] == 0
 
 
-def test_list_returns_all(client):
+def test_list_returns_first_page(client):
     make_tx(client, description="A")
     make_tx(client, description="B")
-    txs = client.get("/api/transactions").json()
-    assert len(txs) == 2
+    body = client.get("/api/transactions").json()
+    assert len(body["data"]) == 2
+    assert body["total"] == 2
 
 
 def test_list_ordered_by_date_desc(client):
     make_tx(client, date="2026-01-01", description="first")
     make_tx(client, date="2026-03-01", description="third")
     make_tx(client, date="2026-02-01", description="second")
-    dates = [t["date"] for t in client.get("/api/transactions").json()]
+    dates = [t["date"] for t in client.get("/api/transactions").json()["data"]]
     assert dates == ["2026-03-01", "2026-02-01", "2026-01-01"]
 
 
@@ -82,15 +87,57 @@ def test_list_filter_by_category(client):
     make_tx(client, category="Food")
     r = client.get("/api/transactions?category=Food")
     assert r.status_code == 200
-    assert all(t["category"] == "Food" for t in r.json())
-    assert len(r.json()) == 2
+    body = r.json()
+    assert all(t["category"] == "Food" for t in body["data"])
+    assert len(body["data"]) == 2
 
 
 def test_list_filter_unknown_category_returns_empty(client):
     make_tx(client, category="Food")
     r = client.get("/api/transactions?category=NonExistent")
     assert r.status_code == 200
-    assert r.json() == []
+    body = r.json()
+    assert body["data"] == []
+    assert body["total"] == 0
+
+
+# ── Pagination ─────────────────────────────────────────────────────────────────
+
+def test_list_pagination_default_limit(client):
+    for i in range(30):
+        make_tx(client, description=f"tx{i}")
+    body = client.get("/api/transactions").json()
+    assert len(body["data"]) == 25
+    assert body["total"] == 30
+    assert body["limit"] == 25
+    assert body["offset"] == 0
+
+
+def test_list_pagination_page_2(client):
+    for i in range(30):
+        make_tx(client, description=f"tx{i}")
+    body = client.get("/api/transactions?page=2&limit=25").json()
+    assert len(body["data"]) == 5
+    assert body["total"] == 30
+    assert body["offset"] == 25
+
+
+def test_list_pagination_custom_limit(client):
+    for i in range(10):
+        make_tx(client, description=f"tx{i}")
+    body = client.get("/api/transactions?limit=3").json()
+    assert len(body["data"]) == 3
+    assert body["total"] == 10
+    assert body["limit"] == 3
+
+
+def test_list_pagination_last_page_fewer_rows(client):
+    for i in range(7):
+        make_tx(client, description=f"tx{i}")
+    body = client.get("/api/transactions?page=2&limit=5").json()
+    assert len(body["data"]) == 2
+    assert body["total"] == 7
+    assert body["offset"] == 5
 
 
 def test_get_one(client):
@@ -158,7 +205,7 @@ def test_delete_does_not_affect_other_transactions(client):
     tx1 = make_tx(client, description="keep")
     tx2 = make_tx(client, description="remove")
     client.delete(f"/api/transactions/{tx2['id']}")
-    remaining = client.get("/api/transactions").json()
+    remaining = client.get("/api/transactions").json()["data"]
     assert len(remaining) == 1
     assert remaining[0]["id"] == tx1["id"]
 

@@ -105,3 +105,53 @@ def test_by_month_spans_multiple_years(client):
 
     assert (2025, 12) in by_ym
     assert (2026, 1) in by_ym
+
+
+# ── /api/summary/by-category-for-period ──────────────────────────────────────
+
+def test_by_category_for_period_empty(client):
+    r = client.get("/api/summary/by-category-for-period?year=2026")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_by_category_for_period_year_only(client):
+    make_tx(client, date="2026-01-10", model_category="Groceries", model_confidence=8, amount=-10.00)
+    make_tx(client, date="2026-06-15", model_category="Groceries", model_confidence=7, amount=-5.00)
+    make_tx(client, date="2026-03-01", model_category="Shopping",  model_confidence=6, amount=-20.00)
+
+    data = {r["category"]: r["total"] for r in client.get("/api/summary/by-category-for-period?year=2026").json()}
+
+    assert data["Groceries"] == -15.00
+    assert data["Shopping"] == -20.00
+
+
+def test_by_category_for_period_with_month(client):
+    make_tx(client, date="2026-01-10", model_category="Groceries", model_confidence=8, amount=-10.00)
+    make_tx(client, date="2026-02-15", model_category="Groceries", model_confidence=7, amount=-5.00)
+
+    data = {r["category"]: r["total"] for r in client.get("/api/summary/by-category-for-period?year=2026&month=1").json()}
+
+    assert data["Groceries"] == -10.00
+    assert "Groceries" in data
+    assert len(data) == 1
+
+
+def test_by_category_for_period_excludes_other_years(client):
+    make_tx(client, date="2025-12-31", model_category="Travel", model_confidence=9, amount=-100.00)
+    make_tx(client, date="2026-01-01", model_category="Travel", model_confidence=9, amount=-50.00)
+
+    data = {r["category"]: r["total"] for r in client.get("/api/summary/by-category-for-period?year=2026").json()}
+
+    assert data.get("Travel") == -50.00
+
+
+def test_by_category_for_period_excludes_pending(client):
+    make_tx(client, date="2026-05-01", model_category=None, model_confidence=-1, amount=-50.00)
+    r = client.get("/api/summary/by-category-for-period?year=2026")
+    assert r.json() == []
+
+
+def test_by_category_for_period_missing_year_returns_422(client):
+    r = client.get("/api/summary/by-category-for-period")
+    assert r.status_code == 422

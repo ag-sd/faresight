@@ -2,4 +2,7 @@
 
 add beneficiaries as a list to the account object. Make it possbile to edit this list separately.
 
-Add pagination to the homepage
+For each transaction we will add the ability to modify the category. In the transactions table, remove the DEL button and
+add an edit icon using fontawesome. The edit icon brings up a modal showing the transaction specifically, but only allows the
+user to change the category from the predecided list we have. We will add a new column to the transaction object called `userModifiedCategory`.
+When the user changes a category this value will be true. Its false by default

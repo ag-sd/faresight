@@ -58,8 +58,8 @@ def test_import_bulk_transactions_saved_to_db(client):
         data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
         files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
     )
-    txs = client.get("/api/transactions").json()
-    assert len(txs) == 13
+    body = client.get("/api/transactions").json()
+    assert body["total"] == 13
 
 
 def test_import_bulk_multiple_files(client):
@@ -93,7 +93,7 @@ def test_import_bulk_multiple_files_all_saved(client):
             ("files", ("feb.csv", csv_bytes, "text/csv")),
         ],
     )
-    assert len(client.get("/api/transactions").json()) == 26
+    assert client.get("/api/transactions").json()["total"] == 26
 
 
 def test_import_bulk_unknown_account_returns_404(client):
@@ -182,7 +182,7 @@ def test_import_bulk_marks_transactions_pending(client):
         data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
         files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
     )
-    txs = client.get("/api/transactions").json()
+    txs = client.get("/api/transactions").json()["data"]
     assert all(tx["model_confidence"] is None for tx in txs)
     assert all(tx["model_category"] is None for tx in txs)
 
@@ -199,9 +199,9 @@ def test_import_bulk_all_files_marked_pending(client):
             ("files", ("feb.csv", csv_bytes, "text/csv")),
         ],
     )
-    txs = client.get("/api/transactions").json()
-    assert len(txs) == 26
-    assert all(tx["model_confidence"] is None for tx in txs)
+    body = client.get("/api/transactions?limit=100").json()
+    assert body["total"] == 26
+    assert all(tx["model_confidence"] is None for tx in body["data"])
 
 
 # ── GET /api/categorizer/status ───────────────────────────────────────────────

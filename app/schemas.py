@@ -72,3 +72,12 @@ class AccountOut(AccountCreate):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ── Pagination ────────────────────────────────────────────────────────────────
+
+class PaginatedTransactions(BaseModel):
+    data: list[TransactionOut]
+    limit: int
+    offset: int
+    total: int

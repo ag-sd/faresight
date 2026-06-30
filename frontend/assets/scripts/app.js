@@ -1,6 +1,7 @@
 // ── State ─────────────────────────────────────────────────────────────────────
 let catChart, monthChart, txTable;
 let _accounts = [];
+let _byMonth = [];
 
 // ── Category colour palette ───────────────────────────────────────────────────
 const CATEGORY_COLORS = {
@@ -17,6 +18,8 @@ const CATEGORY_COLORS = {
   'Other':                         '#aeaeb2',
 };
 
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
 function categoryColor(cat) {
   return CATEGORY_COLORS[cat] ?? '#6c757d';
 }
@@ -24,10 +27,18 @@ function categoryColor(cat) {
 // ── Tabulator: transactions ───────────────────────────────────────────────────
 function initTxTable() {
   txTable = new Tabulator('#txTable', {
-    data: [],
+    ajaxURL: '/api/transactions',
+    pagination: true,
+    paginationMode: 'remote',
+    paginationSize: 25,
     layout: 'fitColumns',
     movableColumns: true,
     initialSort: [{ column: 'date', dir: 'desc' }],
+    dataSendParams: { size: 'limit' },
+    ajaxResponse: (_url, _p, response) => ({
+      data: response.data,
+      last_page: Math.ceil(response.total / response.limit),
+    }),
     columns: [
       {
         title: 'Date', field: 'date', sorter: 'date',
@@ -89,38 +100,60 @@ function initTxTable() {
 }
 
 // ── Charts ────────────────────────────────────────────────────────────────────
-async function refreshCharts() {
-  const [byCat, byMonth] = await Promise.all([
-    api('/api/summary/by-model-category'),
-    api('/api/summary/by-month'),
-  ]);
+function populateYearPicker(selId) {
+  const years = [...new Set(_byMonth.map(r => r.year))].sort((a, b) => b - a);
+  const currentYear = new Date().getFullYear();
+  if (!years.includes(currentYear)) years.unshift(currentYear);
+  const sel = document.getElementById(selId);
+  const prev = sel.value;
+  sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+  sel.value = (prev && years.includes(Number(prev))) ? prev : String(currentYear);
+}
 
+async function refreshCatChart() {
+  const year  = document.getElementById('catYear').value;
+  const month = document.getElementById('catMonth').value;
+  if (!year) return;
+  const qs = month ? `?year=${year}&month=${month}` : `?year=${year}`;
+  const byCat = await api(`/api/summary/by-category-for-period${qs}`);
   if (catChart) catChart.destroy();
   catChart = new Chart(document.getElementById('catChart'), {
-    type: 'doughnut',
+    type: 'pie',
     data: {
       labels: byCat.map(r => r.category),
       datasets: [{ data: byCat.map(r => Math.abs(r.total)), backgroundColor: byCat.map(r => categoryColor(r.category)) }],
     },
     options: { plugins: { legend: { position: 'right' } }, maintainAspectRatio: false },
   });
+}
 
-  const labels = byMonth.map(r => `${r.year}-${String(r.month).padStart(2,'0')}`);
+function renderMonthChart() {
+  const year = Number(document.getElementById('monthYear').value);
+  const filtered = _byMonth.filter(r => r.year === year);
   if (monthChart) monthChart.destroy();
   monthChart = new Chart(document.getElementById('monthChart'), {
     type: 'bar',
     data: {
-      labels,
-      datasets: [{ label: 'Total', data: byMonth.map(r => Math.abs(r.total)), backgroundColor: '#0071e3' }],
+      labels: filtered.map(r => MONTH_NAMES[r.month - 1]),
+      datasets: [{ label: 'Total', data: filtered.map(r => Math.abs(r.total)), backgroundColor: '#0071e3' }],
     },
     options: { plugins: { legend: { display: false } }, maintainAspectRatio: false },
   });
 }
 
+async function refreshCharts() {
+  _byMonth = await api('/api/summary/by-month');
+  populateYearPicker('catYear');
+  populateYearPicker('monthYear');
+  await Promise.all([refreshCatChart(), Promise.resolve(renderMonthChart())]);
+}
+
+function onCatPickerChange() { refreshCatChart(); }
+function onMonthYearChange() { renderMonthChart(); }
+
 // ── Transaction list ──────────────────────────────────────────────────────────
 async function refreshTable() {
-  const txs = await api('/api/transactions');
-  txTable.setData(txs);
+  await txTable.setPage(1);
 }
 
 async function deleteTx(id) {
@@ -137,5 +170,7 @@ async function refreshAll() {
 initTxTable();
 (async () => {
   _accounts = await api('/api/accounts');
+  // Default month picker to current month before first chart render
+  document.getElementById('catMonth').value = String(new Date().getMonth() + 1);
   refreshAll();
 })();
