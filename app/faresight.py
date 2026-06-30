@@ -30,16 +30,16 @@ async def lifespan(app: FastAPI):
     # to the NAS-pulled file.
     engine.dispose()
     sync_task = asyncio.create_task(sync_mod._periodic_sync_loop())
-    cat_proc = _spawn_categorizer()
+    app.state.cat_proc = _spawn_categorizer()
     yield
     sync_task.cancel()
     with suppress(asyncio.CancelledError):
         await sync_task
-    cat_proc.terminate()
+    app.state.cat_proc.terminate()
     try:
-        cat_proc.wait(timeout=10)
+        app.state.cat_proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        cat_proc.kill()
+        app.state.cat_proc.kill()
     sync_mod.sync_to_nas()
     sync_mod._release_lock()
 

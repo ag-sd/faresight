@@ -161,3 +161,41 @@ def test_delete_does_not_affect_other_transactions(client):
     remaining = client.get("/api/transactions").json()
     assert len(remaining) == 1
     assert remaining[0]["id"] == tx1["id"]
+
+
+# ── Categorizer running ───────────────────────────────────────────────────────
+
+def test_categorizer_running_when_proc_alive(client):
+    # _FakeProc.poll() returns None (still running) by default in tests.
+    r = client.get("/api/categorizer/running")
+    assert r.status_code == 200
+    assert r.json() == {"running": True}
+
+
+def test_categorizer_not_running_when_proc_exited(client):
+    from app.faresight import app as _app
+
+    class _ExitedProc:
+        def poll(self): return 0
+
+    original = _app.state.cat_proc
+    _app.state.cat_proc = _ExitedProc()
+    try:
+        r = client.get("/api/categorizer/running")
+        assert r.status_code == 200
+        assert r.json() == {"running": False}
+    finally:
+        _app.state.cat_proc = original
+
+
+def test_categorizer_not_running_when_no_proc(client):
+    from app.faresight import app as _app
+
+    original = _app.state.cat_proc
+    _app.state.cat_proc = None
+    try:
+        r = client.get("/api/categorizer/running")
+        assert r.status_code == 200
+        assert r.json() == {"running": False}
+    finally:
+        _app.state.cat_proc = original

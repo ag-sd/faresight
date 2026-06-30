@@ -1,7 +1,7 @@
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy import case, extract, func
 from sqlalchemy.orm import Session
 
@@ -134,6 +134,12 @@ def categorizer_status(db: Session = Depends(get_db)):
         "pending": int(row.pending or 0),
         "categorized": int(row.categorized or 0),
     }
+
+
+@router.get("/categorizer/running")
+def categorizer_running(request: Request):
+    proc = getattr(request.app.state, "cat_proc", None)
+    return {"running": proc is not None and proc.poll() is None}
 
 
 # ── Import ────────────────────────────────────────────────────────────────────

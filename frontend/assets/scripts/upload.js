@@ -133,6 +133,20 @@ function showResultModal(results) {
   new bootstrap.Modal(document.getElementById('resultModal')).show();
 }
 
+// ── Categorizer subprocess status ────────────────────────────────────────────
+
+async function refreshCategorizerRunning() {
+  const s = await api('/api/categorizer/running');
+  const pill = document.getElementById('categorizerStatusPill');
+  if (s.running) {
+    pill.className = 'badge rounded-pill bg-success';
+    pill.textContent = 'Running';
+  } else {
+    pill.className = 'badge rounded-pill bg-danger';
+    pill.textContent = 'Stopped';
+  }
+}
+
 // ── Categorization tracker ────────────────────────────────────────────────────
 
 async function refreshCategorizerStatus() {
@@ -187,5 +201,7 @@ async function init() {
 }
 
 init();
+refreshCategorizerRunning();
+setInterval(refreshCategorizerRunning, 10000);
 refreshCategorizerStatus();
 setInterval(refreshCategorizerStatus, 10000);

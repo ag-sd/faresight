@@ -22,6 +22,7 @@ class _FakeProc:
     def terminate(self): pass
     def wait(self, timeout=None): pass
     def kill(self): pass
+    def poll(self): return None  # None = still running
 
 
 @pytest.fixture(autouse=True)
