@@ -88,6 +88,35 @@ def test_category_preserved(account, sample_bytes):
     assert arte.category == "Entertainment"
 
 
+# ── Payment classification ────────────────────────────────────────────────────
+
+def test_mobile_payment_classified_as_transfers(account, sample_bytes):
+    result = import_credit_card_csv(sample_bytes, account)
+    payments = [tx for tx in result.transactions if tx.description == "CAPITAL ONE MOBILE PYMT"]
+    assert len(payments) == 2
+    assert all(tx.model_category == "Transfers & Fees" for tx in payments)
+    assert all(tx.model_confidence == 10 for tx in payments)
+
+
+def test_autopay_payment_classified_as_transfers(account):
+    csv_bytes = (
+        b"Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit\n"
+        b"2026-01-15,2026-01-16,1234,CAPITAL ONE AUTOPAY PYMT,Payment/Credit,,250.00\n"
+    )
+    result = import_credit_card_csv(csv_bytes, account)
+    assert len(result.transactions) == 1
+    tx = result.transactions[0]
+    assert tx.model_category == "Transfers & Fees"
+    assert tx.model_confidence == 10
+
+
+def test_regular_transaction_not_classified_as_transfers(account, sample_bytes):
+    result = import_credit_card_csv(sample_bytes, account)
+    arte = next(tx for tx in result.transactions if "ARTE MUSEUM" in tx.description)
+    assert arte.model_category is None
+    assert arte.model_confidence == -1
+
+
 # ── Edge cases ────────────────────────────────────────────────────────────────
 
 def test_empty_csv_returns_no_transactions(account):
