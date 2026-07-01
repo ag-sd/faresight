@@ -87,4 +87,16 @@ def migrate_db() -> None:
             "UPDATE transactions SET model_confidence = -1 WHERE model_confidence IS NULL"
         ))
 
+        # Drop hash_code (idempotency removed) and its unique index.
+        if "hash_code" in tx_existing:
+            conn.execute(text("DROP INDEX IF EXISTS ix_transactions_hash_code"))
+            conn.execute(text("ALTER TABLE transactions DROP COLUMN hash_code"))
+
+        if "note" in tx_existing:
+            conn.execute(text("ALTER TABLE transactions DROP COLUMN note"))
+
+        if "file_id" not in tx_existing:
+            conn.execute(text("DELETE FROM transactions"))
+            conn.execute(text("ALTER TABLE transactions ADD COLUMN file_id INTEGER"))
+
         conn.commit()

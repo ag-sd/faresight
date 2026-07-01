@@ -57,8 +57,23 @@ def client():
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _make_file_import() -> int:
+    """Create a synthetic FileImport record in the test DB; return its id."""
+    from app.models import FileImport
+    db = TestingSession()
+    fi = FileImport(filename="test.csv", rows_seen=1, rows_persisted=1)
+    db.add(fi)
+    db.commit()
+    db.refresh(fi)
+    fid = fi.id
+    db.close()
+    return fid
+
+
 def make_tx(client, **kwargs):
     """POST a transaction with sensible defaults; return the JSON body."""
+    if "file_id" not in kwargs:
+        kwargs["file_id"] = _make_file_import()
     payload = {
         "date": "2026-01-15",
         "description": "Test expense",

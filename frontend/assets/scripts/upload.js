@@ -175,6 +175,32 @@ async function refreshCategorizerStatus() {
   }
 }
 
+// ── Recent uploads table ──────────────────────────────────────────────────────
+
+function initImportTable() {
+  new Tabulator('#importTable', {
+    ajaxURL: '/api/file-imports',
+    pagination: true,
+    paginationMode: 'remote',
+    paginationSize: 25,
+    layout: 'fitColumns',
+    dataSendParams: { size: 'limit' },
+    ajaxResponse: (_url, _p, r) => ({
+      data: r.data,
+      last_page: Math.ceil(r.total / r.limit),
+    }),
+    columns: [
+      { title: 'File',          field: 'filename',       widthGrow: 3 },
+      { title: 'Rows Seen',     field: 'rows_seen',      hozAlign: 'right', width: 120 },
+      { title: 'Rows Imported', field: 'rows_persisted', hozAlign: 'right', width: 140 },
+      {
+        title: 'Loaded At', field: 'loaded_at', width: 200,
+        formatter: (cell) => new Date(cell.getValue()).toLocaleString(),
+      },
+    ],
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init() {
@@ -201,6 +227,7 @@ async function init() {
 }
 
 init();
+initImportTable();
 refreshCategorizerRunning();
 setInterval(refreshCategorizerRunning, 10000);
 refreshCategorizerStatus();

@@ -32,12 +32,12 @@ class Transaction(Base):
     description: Mapped[str] = mapped_column(String(255), nullable=False)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     category: Mapped[str] = mapped_column(String(100), nullable=False)
-    note: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     account_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)
     # AI-suggested category for human review; never overwrites `category`.
     model_category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     model_confidence: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=-1)
     user_modified_category: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    file_id: Mapped[int] = mapped_column(Integer, ForeignKey("file_imports.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -63,6 +63,16 @@ class Account(Base):
     source_frequency: Mapped[Optional[SourceFrequency]] = mapped_column(
         Enum(SourceFrequency), nullable=True
     )
+
+
+class FileImport(Base):
+    __tablename__ = "file_imports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    rows_seen: Mapped[int] = mapped_column(Integer, nullable=False)
+    rows_persisted: Mapped[int] = mapped_column(Integer, nullable=False)
+    loaded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
 
 @dataclass

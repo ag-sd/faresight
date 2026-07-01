@@ -5,11 +5,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from sqlalchemy import case, extract, func
 from sqlalchemy.orm import Session
 
-from app.categorizer import PENDING_CONFIDENCE
+from app.config import PAGE_SIZE
 from app.database import get_db
 from app.importers import IMPORTERS
-from app.models import Account, Transaction
-from app.schemas import PaginatedTransactions, TransactionCreate, TransactionOut, TransactionUpdate
+from app.models import Account, FileImport, Transaction
+from app.schemas import FileImportOut, PaginatedFileImports, PaginatedTransactions, TransactionCreate, TransactionCreateWithFile, TransactionOut, TransactionUpdate
 
 router = APIRouter(prefix="/api", tags=["transactions"])
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 def list_transactions(
     category: Optional[str] = None,
     page: int = 1,
-    limit: int = 25,
+    limit: int = PAGE_SIZE,
     db: Session = Depends(get_db),
 ):
     offset = (page - 1) * limit
@@ -35,7 +35,7 @@ def list_transactions(
 
 
 @router.post("/transactions", response_model=TransactionOut, status_code=201)
-def create_transaction(body: TransactionCreate, db: Session = Depends(get_db)):
+def create_transaction(body: TransactionCreateWithFile, db: Session = Depends(get_db)):
     tx = Transaction(**body.model_dump())
     db.add(tx)
     db.commit()
@@ -92,7 +92,7 @@ def summary_by_model_category(db: Session = Depends(get_db)):
         db.query(Transaction.model_category, func.sum(Transaction.amount).label("total"))
         .filter(
             Transaction.model_category.isnot(None),
-            Transaction.model_confidence != PENDING_CONFIDENCE,
+            Transaction.model_confidence != -1,
         )
         .group_by(Transaction.model_category)
         .all()
@@ -128,7 +128,7 @@ def summary_by_category_for_period(
         db.query(Transaction.model_category, func.sum(Transaction.amount).label("total"))
         .filter(
             Transaction.model_category.isnot(None),
-            Transaction.model_confidence != PENDING_CONFIDENCE,
+            Transaction.model_confidence != -1,
             extract("year", Transaction.date) == year,
         )
     )
@@ -144,12 +144,12 @@ def summary_by_category_for_period(
 def categorizer_status(db: Session = Depends(get_db)):
     row = db.query(
         func.sum(case(
-            (Transaction.model_confidence == PENDING_CONFIDENCE, 1), else_=0
+            (Transaction.model_confidence == -1, 1), else_=0
         )).label("pending"),
         func.sum(case(
             (
                 Transaction.model_confidence.isnot(None) &
-                (Transaction.model_confidence != PENDING_CONFIDENCE),
+                (Transaction.model_confidence != -1),
                 1,
             ),
             else_=0,
@@ -168,6 +168,14 @@ def categorizer_running(request: Request):
 
 
 # ── Import ────────────────────────────────────────────────────────────────────
+
+@router.get("/file-imports", response_model=PaginatedFileImports)
+def list_file_imports(page: int = 1, limit: int = PAGE_SIZE, db: Session = Depends(get_db)):
+    offset = (page - 1) * limit
+    total = db.query(func.count(FileImport.id)).scalar() or 0
+    data = db.query(FileImport).order_by(FileImport.id.desc()).offset(offset).limit(limit).all()
+    return {"data": data, "limit": limit, "offset": offset, "total": total}
+
 
 @router.get("/importers")
 def list_importers() -> list[str]:
@@ -197,14 +205,20 @@ async def import_bulk(
         parsed.append((file.filename, result))
 
     for filename, result in parsed:
+        rows_seen = len(result.transactions) + len(result.errors)
+        log = FileImport(filename=filename, rows_seen=rows_seen, rows_persisted=0)
+        db.add(log)
+        db.flush()  # populate log.id before inserting transactions
+
+        imported = 0
         for tx in result.transactions:
-            tx.model_confidence = PENDING_CONFIDENCE
-            db.add(Transaction(**tx.model_dump()))
-        results.append({
-            "filename": filename,
-            "imported": len(result.transactions),
-            "errors": result.errors,
-        })
+            d = tx.model_dump()
+            d["file_id"] = log.id
+            db.add(Transaction(**d))
+            imported += 1
+
+        log.rows_persisted = imported
+        results.append({"filename": filename, "imported": imported, "errors": result.errors})
 
     db.commit()
     return results

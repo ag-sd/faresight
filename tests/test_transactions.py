@@ -21,15 +21,13 @@ def test_create_minimal(client):
     assert tx["description"] == "Test expense"
     assert tx["amount"] == -10.00
     assert tx["category"] == "Food"
-    assert tx["note"] is None
     assert tx["account_id"] is None
     assert "created_at" in tx
 
 
 def test_create_with_all_fields(client):
     acct_id = _make_account(client, bank="Visa", name="Visa Card")
-    tx = make_tx(client, note="weekly shop", account_id=acct_id, amount=-55.25)
-    assert tx["note"] == "weekly shop"
+    tx = make_tx(client, account_id=acct_id, amount=-55.25)
     assert tx["account_id"] == acct_id
     assert tx["amount"] == -55.25
 
@@ -82,9 +80,9 @@ def test_list_ordered_by_date_desc(client):
 
 
 def test_list_filter_by_category(client):
-    make_tx(client, category="Food")
-    make_tx(client, category="Transport")
-    make_tx(client, category="Food")
+    make_tx(client, category="Food", description="Grocery 1")
+    make_tx(client, category="Transport", description="Bus fare")
+    make_tx(client, category="Food", description="Grocery 2")
     r = client.get("/api/transactions?category=Food")
     assert r.status_code == 200
     body = r.json()
@@ -174,11 +172,10 @@ def test_patch_multiple_fields(client):
     tx = make_tx(client)
     r = client.patch(
         f"/api/transactions/{tx['id']}",
-        json={"category": "Travel", "note": "flight", "account_id": acct_id},
+        json={"category": "Travel", "account_id": acct_id},
     )
     data = r.json()
     assert data["category"] == "Travel"
-    assert data["note"] == "flight"
     assert data["account_id"] == acct_id
 
 

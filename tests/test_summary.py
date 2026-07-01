@@ -29,8 +29,8 @@ def test_by_category_single_entry(client):
 
 
 def test_by_category_rounds_to_two_decimals(client):
-    make_tx(client, category="Misc", amount=-0.001)
-    make_tx(client, category="Misc", amount=-0.001)
+    make_tx(client, category="Misc", amount=-0.001, description="tiny 1")
+    make_tx(client, category="Misc", amount=-0.001, description="tiny 2")
     rows = client.get("/api/summary/by-category").json()
     assert rows[0]["total"] == round(-0.001 + -0.001, 2)
 

@@ -154,12 +154,17 @@ def _good_generate(prompt):
     })
 
 def _make_row(db, description="Coffee", amount=-5.0, confidence=PENDING_CONFIDENCE):
+    from app.models import FileImport
+    fi = FileImport(filename="test.csv", rows_seen=1, rows_persisted=0)
+    db.add(fi)
+    db.flush()
     row = Transaction(
         date=date(2026, 1, 1),
         description=description,
         amount=amount,
         category="Uncategorized",
         model_confidence=confidence,
+        file_id=fi.id,
     )
     db.add(row)
     db.commit()
@@ -199,11 +204,15 @@ def test_categorize_pending_ignores_null_confidence(monkeypatch):
     from sqlalchemy import text
     monkeypatch.setattr(cz, "ensure_ollama_running",
                         lambda: pytest.fail("should not call Ollama"))
+    from app.models import FileImport
     db = TestingSession()
     try:
+        fi = FileImport(filename="test.csv", rows_seen=1, rows_persisted=0)
+        db.add(fi)
+        db.flush()
         db.execute(text(
-            "INSERT INTO transactions (date, description, amount, category, model_confidence, user_modified_category)"
-            " VALUES ('2026-01-01', 'Coffee', -5.0, 'Uncategorized', NULL, 0)"
+            "INSERT INTO transactions (date, description, amount, category, model_confidence, user_modified_category, file_id)"
+            f" VALUES ('2026-01-01', 'Coffee', -5.0, 'Uncategorized', NULL, 0, {fi.id})"
         ))
         db.commit()
         count = cz._categorize_pending(db)
@@ -288,6 +297,7 @@ def test_categorize_pending_checks_ollama_per_batch(monkeypatch):
 def _out(model_confidence):
     return TransactionOut(
         id=1,
+        file_id=1,
         date=date(2026, 1, 1),
         description="Test",
         amount=-5.0,

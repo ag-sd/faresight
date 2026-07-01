@@ -14,7 +14,6 @@ class TransactionCreate(BaseModel):
     description: str
     amount: float
     category: str
-    note: Optional[str] = None
     account_id: Optional[int] = None
     model_category: Optional[str] = None
     model_confidence: Optional[int] = -1
@@ -28,15 +27,19 @@ class TransactionUpdate(BaseModel):
     description: Optional[str] = None
     amount: Optional[float] = None
     category: Optional[str] = None
-    note: Optional[str] = None
     account_id: Optional[int] = None
     model_category: Optional[str] = None
     model_confidence: Optional[int] = None
     user_modified_category: Optional[bool] = None
 
 
+class TransactionCreateWithFile(TransactionCreate):
+    file_id: int
+
+
 class TransactionOut(TransactionCreate):
     id: int
+    file_id: int
     created_at: datetime
 
     model_config = {"from_attributes": True, "protected_namespaces": ()}
@@ -80,10 +83,29 @@ class AccountOut(AccountCreate):
     model_config = {"from_attributes": True}
 
 
+# ── File imports ─────────────────────────────────────────────────────────────
+
+class FileImportOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    filename: str
+    rows_seen: int
+    rows_persisted: int
+    loaded_at: datetime
+
+
 # ── Pagination ────────────────────────────────────────────────────────────────
 
 class PaginatedTransactions(BaseModel):
     data: list[TransactionOut]
+    limit: int
+    offset: int
+    total: int
+
+
+class PaginatedFileImports(BaseModel):
+    data: list[FileImportOut]
     limit: int
     offset: int
     total: int

@@ -47,12 +47,7 @@ function initTxTable() {
       {
         title: 'Description', field: 'description',
         headerFilter: 'input', widthGrow: 3,
-        formatter: (cell) => {
-          const { description, note } = cell.getRow().getData();
-          return note
-            ? `${esc(String(description))}<br><small class="text-muted">${esc(String(note))}</small>`
-            : esc(String(description));
-        },
+        formatter: (cell) => esc(String(cell.getValue())),
       },
       {
         title: 'AI Category', field: 'model_category', widthGrow: 2,

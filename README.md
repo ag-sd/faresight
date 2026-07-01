@@ -168,6 +168,51 @@ machine's lock is fresher than `sync_interval_minutes`, the UI shows:
 [Proceed anyway] pushes and claims the lock. [Work offline] disables NAS sync
 for the session.
 
+## Database schema
+
+```mermaid
+erDiagram
+    file_imports {
+        int      id           PK
+        string   filename
+        int      rows_seen
+        int      rows_persisted
+        datetime loaded_at
+    }
+
+    accounts {
+        int      id                 PK
+        string   bank
+        string   name
+        string   account_number
+        string   account_type
+        string   notes
+        bool     is_active
+        datetime created_at
+        int      source_account_id FK
+        float    source_amount
+        string   source_frequency
+    }
+
+    transactions {
+        int      id                    PK
+        date     date
+        string   description
+        float    amount
+        string   category
+        int      account_id            FK
+        string   model_category
+        int      model_confidence
+        bool     user_modified_category
+        int      file_id               FK
+        datetime created_at
+    }
+
+    file_imports  ||--o{ transactions : "file_id"
+    accounts      |o--o{ transactions : "account_id"
+    accounts      |o--o{ accounts     : "source_account_id"
+```
+
 ## Roadmap
 
 - [ ] CSV import
