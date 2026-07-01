@@ -187,6 +187,35 @@ def test_patch_nonexistent_returns_404(client):
     assert r.status_code == 404
 
 
+# ── user_modified_category ─────────────────────────────────────────────────────
+
+def test_user_modified_category_defaults_false(client):
+    tx = make_tx(client)
+    assert tx["user_modified_category"] is False
+
+
+def test_patch_model_category_with_user_modified_flag(client):
+    tx = make_tx(client)
+    r = client.patch(
+        f"/api/transactions/{tx['id']}",
+        json={"model_category": "Travel", "model_confidence": 10, "user_modified_category": True},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["model_category"] == "Travel"
+    assert data["model_confidence"] == 10
+    assert data["user_modified_category"] is True
+
+
+def test_patch_model_category_without_flag_leaves_it_false(client):
+    tx = make_tx(client)
+    r = client.patch(f"/api/transactions/{tx['id']}", json={"model_category": "Shopping"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["model_category"] == "Shopping"
+    assert data["user_modified_category"] is False
+
+
 # ── Delete ────────────────────────────────────────────────────────────────────
 
 def test_delete(client):

@@ -91,9 +91,9 @@ function initTxTable() {
         },
       },
       {
-        title: '', headerSort: false, hozAlign: 'center', width: 72,
-        formatter: () => '<button class="btn btn-danger btn-sm">Del</button>',
-        cellClick: (_e, cell) => deleteTx(cell.getRow().getData().id),
+        title: '', headerSort: false, hozAlign: 'center', width: 48,
+        formatter: () => '<button class="btn btn-link btn-sm p-0 text-secondary"><i class="fa-regular fa-pen-to-square"></i></button>',
+        cellClick: (_e, cell) => openEditModal(cell.getRow().getData()),
       },
     ],
   });
@@ -130,14 +130,24 @@ async function refreshCatChart() {
 function renderMonthChart() {
   const year = Number(document.getElementById('monthYear').value);
   const filtered = _byMonth.filter(r => r.year === year);
+  const totals = filtered.map(r => Math.abs(r.total));
+  const avg = totals.length ? totals.reduce((a, b) => a + b, 0) / totals.length : 0;
   if (monthChart) monthChart.destroy();
   monthChart = new Chart(document.getElementById('monthChart'), {
     type: 'bar',
     data: {
       labels: filtered.map(r => MONTH_NAMES[r.month - 1]),
-      datasets: [{ label: 'Total', data: filtered.map(r => Math.abs(r.total)), backgroundColor: '#0071e3' }],
+      datasets: [
+        { label: 'Spending', data: totals, backgroundColor: '#0071e3' },
+        {
+          type: 'line', label: 'Monthly avg',
+          data: totals.map(() => avg),
+          borderColor: '#ff9f0a', borderWidth: 2, borderDash: [6, 3],
+          pointRadius: 0, fill: false,
+        },
+      ],
     },
-    options: { plugins: { legend: { display: false } }, maintainAspectRatio: false },
+    options: { plugins: { legend: { display: true } }, maintainAspectRatio: false },
   });
 }
 
@@ -156,9 +166,34 @@ async function refreshTable() {
   await txTable.setPage(1);
 }
 
-async function deleteTx(id) {
-  if (!confirm('Delete this transaction?')) return;
-  await api(`/api/transactions/${id}`, { method: 'DELETE' });
+let _editTxId = null;
+
+function openEditModal(tx) {
+  _editTxId = tx.id;
+  document.getElementById('editTxDate').textContent = tx.date;
+  document.getElementById('editTxDescription').textContent = tx.description;
+  const amount = parseFloat(tx.amount);
+  const neg = amount < 0;
+  const el = document.getElementById('editTxAmount');
+  el.textContent = (neg ? '-' : '+') + '$' + Math.abs(amount).toFixed(2);
+  el.className = neg ? 'text-danger' : 'text-success';
+  const sel = document.getElementById('editCategorySelect');
+  sel.innerHTML = Object.keys(CATEGORY_COLORS)
+    .sort()
+    .map(c => `<option value="${esc(c)}">${esc(c)}</option>`)
+    .join('');
+  sel.value = (tx.model_category && tx.model_category in CATEGORY_COLORS) ? tx.model_category : 'Other';
+  new bootstrap.Modal(document.getElementById('editCategoryModal')).show();
+}
+
+async function saveCategory() {
+  const category = document.getElementById('editCategorySelect').value;
+  await api(`/api/transactions/${_editTxId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model_category: category, model_confidence: 10, user_modified_category: true }),
+  });
+  bootstrap.Modal.getInstance(document.getElementById('editCategoryModal')).hide();
   await refreshAll();
 }
 

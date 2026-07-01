@@ -260,8 +260,8 @@ def test_categorizer_status_excludes_null_confidence(client):
     # Use raw SQL to bypass the ORM default so the row lands with NULL confidence.
     db = TestingSession()
     db.execute(text(
-        "INSERT INTO transactions (date, description, amount, category, model_confidence)"
-        " VALUES ('2026-01-01', 'legacy row', -5.0, 'Food', NULL)"
+        "INSERT INTO transactions (date, description, amount, category, model_confidence, user_modified_category)"
+        " VALUES ('2026-01-01', 'legacy row', -5.0, 'Food', NULL, 0)"
     ))
     db.commit()
     db.close()

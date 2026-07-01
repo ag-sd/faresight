@@ -18,15 +18,21 @@ class TransactionCreate(BaseModel):
     account_id: Optional[int] = None
     model_category: Optional[str] = None
     model_confidence: Optional[int] = -1
+    user_modified_category: bool = False
 
 
 class TransactionUpdate(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     date: Optional[date] = None
     description: Optional[str] = None
     amount: Optional[float] = None
     category: Optional[str] = None
     note: Optional[str] = None
     account_id: Optional[int] = None
+    model_category: Optional[str] = None
+    model_confidence: Optional[int] = None
+    user_modified_category: Optional[bool] = None
 
 
 class TransactionOut(TransactionCreate):

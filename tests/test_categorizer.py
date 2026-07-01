@@ -202,8 +202,8 @@ def test_categorize_pending_ignores_null_confidence(monkeypatch):
     db = TestingSession()
     try:
         db.execute(text(
-            "INSERT INTO transactions (date, description, amount, category, model_confidence)"
-            " VALUES ('2026-01-01', 'Coffee', -5.0, 'Uncategorized', NULL)"
+            "INSERT INTO transactions (date, description, amount, category, model_confidence, user_modified_category)"
+            " VALUES ('2026-01-01', 'Coffee', -5.0, 'Uncategorized', NULL, 0)"
         ))
         db.commit()
         count = cz._categorize_pending(db)

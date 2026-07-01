@@ -77,6 +77,11 @@ def migrate_db() -> None:
             if col_name not in tx_existing:
                 conn.execute(text(f"ALTER TABLE transactions ADD COLUMN {col_name} {col_def}"))
 
+        if "user_modified_category" not in tx_existing:
+            conn.execute(text(
+                "ALTER TABLE transactions ADD COLUMN user_modified_category INTEGER NOT NULL DEFAULT 0"
+            ))
+
         # Backfill pre-default-change NULL rows so they are queued for categorization.
         conn.execute(text(
             "UPDATE transactions SET model_confidence = -1 WHERE model_confidence IS NULL"

@@ -37,6 +37,7 @@ class Transaction(Base):
     # AI-suggested category for human review; never overwrites `category`.
     model_category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     model_confidence: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=-1)
+    user_modified_category: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
