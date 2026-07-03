@@ -21,10 +21,18 @@ function renderFileList() {
   for (const [key, file] of fileSet) {
     const li = document.createElement('li');
     li.className = 'list-group-item d-flex justify-content-between align-items-center py-2';
-    li.innerHTML =
-      `<span class="text-truncate me-2"><i class="fa-regular fa-file me-2 text-muted"></i>${esc(file.name)}</span>` +
-      `<button class="btn btn-sm btn-outline-danger py-0 px-2 flex-shrink-0" onclick="removeFile(${JSON.stringify(key)})">` +
-      `<i class="fa-regular fa-xmark"></i></button>`;
+
+    const span = document.createElement('span');
+    span.className = 'text-truncate me-2';
+    span.innerHTML = '<i class="fa-regular fa-file me-2 text-muted"></i>';
+    span.append(file.name);  // text node — browser escapes special characters automatically
+
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-outline-danger py-0 px-2 flex-shrink-0';
+    btn.innerHTML = '<i class="fa-regular fa-xmark"></i>';  // static markup only
+    btn.addEventListener('click', () => removeFile(key));   // key closed over, never serialized into HTML
+
+    li.append(span, btn);
     ul.appendChild(li);
   }
   updateUploadBtn();

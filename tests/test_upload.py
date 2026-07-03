@@ -362,6 +362,26 @@ def test_file_imports_pagination(client):
     assert len(page2["data"]) == 1
 
 
+def test_import_bulk_filename_with_special_chars_preserved(client):
+    """Filenames containing HTML special characters are echoed verbatim by the API.
+
+    The frontend is responsible for safe rendering (text nodes, not innerHTML);
+    this test confirms the pipeline never mangles or strips the characters before
+    they reach the frontend.
+    """
+    acct = _make_account(client)
+    special_name = 'weird "name<img src=x onerror=alert(1)>.csv'
+    csv_bytes = SAMPLE_CSV.read_bytes()
+    r = client.post(
+        "/api/transactions/import-bulk",
+        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        files=[("files", (special_name, csv_bytes, "text/csv"))],
+    )
+    assert r.status_code == 200
+    result = r.json()[0]
+    assert result["filename"] == special_name
+
+
 def test_categorizer_status_excludes_null_confidence(client):
     """Legacy rows with model_confidence IS NULL are not counted in either bucket."""
     from sqlalchemy import text
