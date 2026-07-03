@@ -46,6 +46,7 @@ ALLOWED_CATEGORIES = [
     "Entertainment & Subscriptions",
     "Travel",
     "Income",
+    "Payments",
     "Transfers & Fees",
     "Other",
 ]
@@ -158,7 +159,8 @@ def build_prompt(batch: list[dict]) -> str:
         "- Entertainment & Subscriptions: streaming, games, events, movies, memberships\n"
         "- Travel: flights, hotels, car rentals, vacation spend\n"
         "- Income: paychecks, deposits, refunds, interest, dividends\n"
-        "- Transfers & Fees: account transfers, ATM, bank fees, card payments, taxes, loans\n"
+        "- Payments: credit card payments, loan payments, bill pay\n"
+        "- Transfers & Fees: account transfers, ATM, bank fees, taxes, loans\n"
         "- Other: use ONLY when no category above clearly fits\n"
         "\n"
         "CONFIDENCE SCORE (integer 0-10):\n"

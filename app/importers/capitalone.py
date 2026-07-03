@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import date as date_type
+from datetime import date as date_type, datetime
 
 from app.models import Account, ImportResult
 from app.schemas import TransactionCreate
@@ -36,10 +36,46 @@ def import_credit_card_csv(file_bytes: bytes, account: Account) -> ImportResult:
                 amount=round(amount, 2),
                 category=category,
                 account_id=account.id,
-                model_category="Transfers & Fees" if is_payment else None,
+                model_category="Payments" if is_payment else None,
                 model_confidence=10 if is_payment else -1,
             ))
         except (KeyError, ValueError) as e:
             errors.append(f"Row {i}: {e}")
 
     return ImportResult(transactions=transactions, errors=errors)
+
+
+def import_checking_savings_csv(file_bytes: bytes, account: Account) -> ImportResult:
+    text = file_bytes.decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+    transactions, errors = [], []
+    account_balance = None
+
+    for i, row in enumerate(reader, start=2):
+        try:
+            tx_date = datetime.strptime(row["Transaction Date"].strip(), "%m/%d/%y").date()
+            description = row["Transaction Description"].strip()
+            tx_type = row["Transaction Type"].strip()
+            raw_amount = float(row["Transaction Amount"].strip())
+
+            if tx_type == "Debit":
+                amount = -raw_amount
+            elif tx_type == "Credit":
+                amount = raw_amount
+            else:
+                raise ValueError(f"unknown Transaction Type: {tx_type!r}")
+
+            if account_balance is None:
+                account_balance = float(row["Balance"].strip())
+
+            transactions.append(TransactionCreate(
+                date=tx_date,
+                description=description,
+                amount=round(amount, 2),
+                category="Uncategorized",
+                account_id=account.id,
+            ))
+        except (KeyError, ValueError) as e:
+            errors.append(f"Row {i}: {e}")
+
+    return ImportResult(transactions=transactions, errors=errors, account_balance=account_balance)

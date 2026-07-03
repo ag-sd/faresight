@@ -94,7 +94,7 @@ def test_mobile_payment_classified_as_transfers(account, sample_bytes):
     result = import_credit_card_csv(sample_bytes, account)
     payments = [tx for tx in result.transactions if tx.description == "CAPITAL ONE MOBILE PYMT"]
     assert len(payments) == 2
-    assert all(tx.model_category == "Transfers & Fees" for tx in payments)
+    assert all(tx.model_category == "Payments" for tx in payments)
     assert all(tx.model_confidence == 10 for tx in payments)
 
 
@@ -106,7 +106,7 @@ def test_autopay_payment_classified_as_transfers(account):
     result = import_credit_card_csv(csv_bytes, account)
     assert len(result.transactions) == 1
     tx = result.transactions[0]
-    assert tx.model_category == "Transfers & Fees"
+    assert tx.model_category == "Payments"
     assert tx.model_confidence == 10
 
 
