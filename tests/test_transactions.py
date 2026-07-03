@@ -90,6 +90,43 @@ def test_list_filter_by_category(client):
     assert len(body["data"]) == 2
 
 
+def test_list_filter_by_account_type_credit_card(client):
+    cc_id = _make_account(client, account_type="credit_card")
+    bank_id = _make_account(client, account_type="checking")
+    make_tx(client, account_id=cc_id, description="CC tx")
+    make_tx(client, account_id=bank_id, description="Bank tx")
+    body = client.get("/api/transactions?account_type=credit_card").json()
+    assert body["total"] == 1
+    assert body["data"][0]["description"] == "CC tx"
+
+
+def test_list_filter_by_account_type_bank(client):
+    cc_id = _make_account(client, account_type="credit_card")
+    bank_id = _make_account(client, account_type="checking")
+    make_tx(client, account_id=cc_id, description="CC tx")
+    make_tx(client, account_id=bank_id, description="Bank tx")
+    body = client.get("/api/transactions?account_type=bank").json()
+    assert body["total"] == 1
+    assert body["data"][0]["description"] == "Bank tx"
+
+
+def test_list_filter_by_account_type_bank_page2_does_not_leak_cc_rows(client):
+    """Regression: static ajaxParams on pagination caused page 2 to re-send credit_card."""
+    cc_id = _make_account(client, account_type="credit_card")
+    bank_id = _make_account(client, account_type="checking")
+    for i in range(26):
+        make_tx(client, account_id=bank_id, description=f"bank-{i:02d}")
+    make_tx(client, account_id=cc_id, description="cc-row")
+    p1 = client.get("/api/transactions?account_type=bank&page=1&limit=25").json()
+    assert p1["total"] == 26
+    assert len(p1["data"]) == 25
+    assert all(tx["account_id"] == bank_id for tx in p1["data"])
+    p2 = client.get("/api/transactions?account_type=bank&page=2&limit=25").json()
+    assert len(p2["data"]) == 1
+    assert p2["data"][0]["account_id"] == bank_id
+    assert p2["data"][0]["description"] != "cc-row"
+
+
 def test_list_filter_unknown_category_returns_empty(client):
     make_tx(client, category="Food")
     r = client.get("/api/transactions?category=NonExistent")

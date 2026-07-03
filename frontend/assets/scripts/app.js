@@ -30,7 +30,7 @@ function categoryColor(cat) {
 function initTxTable() {
   txTable = new Tabulator('#txTable', {
     ajaxURL: '/api/transactions',
-    ajaxParams: { account_type: _activeAccountType },
+    ajaxParams: () => ({ account_type: _activeAccountType }),
     pagination: true,
     paginationMode: 'remote',
     paginationSize: 25,
@@ -212,7 +212,7 @@ initTxTable();
       document.querySelectorAll('#txTabs .nav-link').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _activeAccountType = btn.dataset.accountType;
-      txTable.setData('/api/transactions', { account_type: _activeAccountType });
+      txTable.setData('/api/transactions');
     });
   });
 })();
