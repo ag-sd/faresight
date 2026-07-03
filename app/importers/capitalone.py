@@ -50,6 +50,7 @@ def import_checking_savings_csv(file_bytes: bytes, account: Account) -> ImportRe
     reader = csv.DictReader(io.StringIO(text))
     transactions, errors = [], []
     account_balance = None
+    _latest_tx_date = None
 
     for i, row in enumerate(reader, start=2):
         try:
@@ -65,7 +66,8 @@ def import_checking_savings_csv(file_bytes: bytes, account: Account) -> ImportRe
             else:
                 raise ValueError(f"unknown Transaction Type: {tx_type!r}")
 
-            if account_balance is None:
+            if _latest_tx_date is None or tx_date >= _latest_tx_date:
+                _latest_tx_date = tx_date
                 account_balance = float(row["Balance"].strip())
 
             transactions.append(TransactionCreate(

@@ -405,6 +405,42 @@ def test_categorizer_status_excludes_null_confidence(client):
     assert r["categorized"] == 0
 
 
+# ── account.current_balance from newest row (date-order regression) ──────────
+
+SAVINGS_IMPORTER = "Capital One Checking/Savings"
+
+
+def _make_savings_account(client):
+    r = client.post("/api/accounts", json={
+        "bank": "Capital One",
+        "name": "360 Savings",
+        "account_number": "1543",
+        "account_type": "savings",
+    })
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_import_savings_ascending_order_sets_newest_balance(client):
+    """Ascending-date CSV: current_balance must reflect the newest (last) row, not the first."""
+    acct = _make_savings_account(client)
+    csv_bytes = (
+        b"Account Number,Transaction Description,Transaction Date,Transaction Type,Transaction Amount,Balance\n"
+        b"1543,Old Withdrawal,04/14/26,Debit,65000,10000.00\n"
+        b"1543,Middle Credit,05/31/26,Credit,500,10500.00\n"
+        b"1543,Newest Deposit,06/23/26,Credit,1000,11500.00\n"
+    )
+    r = client.post(
+        "/api/transactions/import-bulk",
+        data={"account_id": acct["id"], "importer": SAVINGS_IMPORTER},
+        files=[("files", ("savings.csv", csv_bytes, "text/csv"))],
+    )
+    assert r.status_code == 200
+    assert r.json()[0]["imported"] == 3
+    acc = next(a for a in client.get("/api/accounts").json() if a["id"] == acct["id"])
+    assert acc["current_balance"] == 11500.00
+
+
 # ── Binary / parse-failure resilience ────────────────────────────────────────
 
 BINARY_BYTES = b"\xff\xfe\x00binary\x00junk"

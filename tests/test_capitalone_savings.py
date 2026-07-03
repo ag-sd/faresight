@@ -85,6 +85,30 @@ def test_account_balance_from_first_row(account, sample_bytes):
     assert result.account_balance == 151632.53
 
 
+def test_account_balance_ascending_date_order(account):
+    """Ascending-order export: balance must come from the last (newest) row, not the first."""
+    csv_bytes = (
+        b"Account Number,Transaction Description,Transaction Date,Transaction Type,Transaction Amount,Balance\n"
+        b"1543,Old Withdrawal,04/14/26,Debit,65000,129869.66\n"
+        b"1543,Middle Credit,05/31/26,Credit,339.94,131374.53\n"
+        b"1543,Newest Deposit,06/23/26,Credit,500,151632.53\n"
+    )
+    result = import_checking_savings_csv(csv_bytes, account)
+    assert result.account_balance == 151632.53
+
+
+def test_account_balance_descending_date_order(account):
+    """Descending-order export (Capital One default): balance still comes from the newest row."""
+    csv_bytes = (
+        b"Account Number,Transaction Description,Transaction Date,Transaction Type,Transaction Amount,Balance\n"
+        b"1543,Newest Deposit,06/23/26,Credit,500,151632.53\n"
+        b"1543,Middle Credit,05/31/26,Credit,339.94,131374.53\n"
+        b"1543,Old Withdrawal,04/14/26,Debit,65000,129869.66\n"
+    )
+    result = import_checking_savings_csv(csv_bytes, account)
+    assert result.account_balance == 151632.53
+
+
 def test_account_balance_none_on_empty_csv(account):
     csv_bytes = b"Account Number,Transaction Description,Transaction Date,Transaction Type,Transaction Amount,Balance\n"
     result = import_checking_savings_csv(csv_bytes, account)
