@@ -63,6 +63,7 @@ class Account(Base):
     source_frequency: Mapped[Optional[SourceFrequency]] = mapped_column(
         Enum(SourceFrequency), nullable=True
     )
+    current_balance: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
 
 class FileImport(Base):
@@ -73,9 +74,11 @@ class FileImport(Base):
     rows_seen: Mapped[int] = mapped_column(Integer, nullable=False)
     rows_persisted: Mapped[int] = mapped_column(Integer, nullable=False)
     loaded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    account_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)
 
 
 @dataclass
 class ImportResult:
     transactions: list["TransactionCreate"] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    account_balance: Optional[float] = None

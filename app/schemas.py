@@ -61,6 +61,7 @@ class AccountCreate(BaseModel):
     source_account_id: Optional[int] = None
     source_amount: Optional[float] = None
     source_frequency: Optional[SourceFrequency] = None
+    current_balance: Optional[float] = None
 
 
 class AccountUpdate(BaseModel):
@@ -93,6 +94,7 @@ class FileImportOut(BaseModel):
     rows_seen: int
     rows_persisted: int
     loaded_at: datetime
+    account_id: Optional[int] = None
 
 
 # ── Pagination ────────────────────────────────────────────────────────────────

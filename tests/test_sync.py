@@ -1,12 +1,34 @@
 """Tests for app/sync.py and the sync-related API endpoints."""
 import json
+import sqlite3 as _sqlite3
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import pytest
 
 import app.sync as sync_mod
 from app.sync import disable_sync, sync_from_nas, sync_to_nas
+
+
+# ── SQLite DB helpers ─────────────────────────────────────────────────────────
+
+def _make_sqlite_db(path: Path, value: str = "test") -> None:
+    """Create a minimal valid SQLite DB with one row at path."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = _sqlite3.connect(str(path))
+    conn.execute("CREATE TABLE data (v TEXT)")
+    conn.execute("INSERT INTO data VALUES (?)", (value,))
+    conn.commit()
+    conn.close()
+
+
+def _read_sqlite_value(path: Path) -> Optional[str]:
+    """Read the single value from a DB created by _make_sqlite_db."""
+    conn = _sqlite3.connect(str(path))
+    row = conn.execute("SELECT v FROM data").fetchone()
+    conn.close()
+    return row[0] if row else None
 
 _FULL_STATUS_KEYS = {"reachable", "last_action", "detail", "lock_warning", "last_push", "sync_enabled"}
 
@@ -61,10 +83,10 @@ def test_pushes_initial_copy_when_nas_file_absent(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     local_db = tmp_path / "local.db"
-    local_db.write_bytes(b"local-content")
+    _make_sqlite_db(local_db, "local-content")
     _patch(monkeypatch, nas_dir / "expenses.db", local_db)
     sync_from_nas()
-    assert (nas_dir / "expenses.db").read_bytes() == b"local-content"
+    assert _read_sqlite_value(nas_dir / "expenses.db") == "local-content"
     assert sync_mod._status["last_action"] == "pushed_initial"
 
 
@@ -72,7 +94,7 @@ def test_push_writes_marker(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     local_db = tmp_path / "local.db"
-    local_db.write_bytes(b"content")
+    _make_sqlite_db(local_db)
     _patch(monkeypatch, nas_dir / "expenses.db", local_db)
     sync_from_nas()
     marker = Path(str(local_db) + ".synced_at")
@@ -99,7 +121,7 @@ def test_pulls_when_no_marker_exists(monkeypatch, tmp_path):
     local_dir = tmp_path / "local"
     local_dir.mkdir()
     local_db = local_dir / "local.db"
-    local_db.write_bytes(b"old-local")
+    _make_sqlite_db(local_db, "old-local")
     _patch(monkeypatch, nas_db, local_db)
     sync_from_nas()
     assert local_db.read_bytes() == b"nas-content"
@@ -114,7 +136,7 @@ def test_pulls_when_nas_is_newer_than_marker(monkeypatch, tmp_path):
     local_dir = tmp_path / "local"
     local_dir.mkdir()
     local_db = local_dir / "local.db"
-    local_db.write_bytes(b"stale-local")
+    _make_sqlite_db(local_db, "stale-local")
     Path(str(local_db) + ".synced_at").write_text(str(nas_db.stat().st_mtime - 100))
     _patch(monkeypatch, nas_db, local_db)
     sync_from_nas()
@@ -130,12 +152,12 @@ def test_pull_creates_backup_of_existing_local(monkeypatch, tmp_path):
     local_dir = tmp_path / "local"
     local_dir.mkdir()
     local_db = local_dir / "local.db"
-    local_db.write_bytes(b"precious-local-data")
+    _make_sqlite_db(local_db, "precious")
     _patch(monkeypatch, nas_db, local_db)
     sync_from_nas()
     bak = local_db.with_suffix(".db.bak")
     assert bak.exists()
-    assert bak.read_bytes() == b"precious-local-data"
+    assert _read_sqlite_value(bak) == "precious"
 
 
 def test_pull_no_backup_when_local_absent(monkeypatch, tmp_path):
@@ -248,7 +270,7 @@ def test_lock_written_after_first_run_push(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     local_db = tmp_path / "local.db"
-    local_db.write_bytes(b"local-content")
+    _make_sqlite_db(local_db, "local-content")
     _patch(monkeypatch, nas_dir / "expenses.db", local_db)
     sync_from_nas()
     assert (nas_dir / "expenses.db.lock").exists()
@@ -331,12 +353,12 @@ def test_sync_to_nas_pushes_local_to_nas(monkeypatch, tmp_path):
     nas_dir.mkdir()
     nas_db = nas_dir / "expenses.db"
     local_db = tmp_path / "local.db"
-    local_db.write_bytes(b"latest-local")
+    _make_sqlite_db(local_db, "latest-local")
     _patch(monkeypatch, nas_db, local_db)
 
     sync_to_nas()
 
-    assert nas_db.read_bytes() == b"latest-local"
+    assert _read_sqlite_value(nas_db) == "latest-local"
     assert sync_mod._status["last_action"] == "pushed_update"
 
 
@@ -344,7 +366,7 @@ def test_sync_to_nas_writes_marker(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     local_db = tmp_path / "local.db"
-    local_db.write_bytes(b"content")
+    _make_sqlite_db(local_db)
     _patch(monkeypatch, nas_dir / "expenses.db", local_db)
 
     sync_to_nas()
@@ -358,7 +380,7 @@ def test_sync_to_nas_writes_lock(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     local_db = tmp_path / "local.db"
-    local_db.write_bytes(b"content")
+    _make_sqlite_db(local_db)
     _patch(monkeypatch, nas_dir / "expenses.db", local_db)
 
     sync_to_nas()
@@ -371,7 +393,7 @@ def test_sync_to_nas_records_last_push_timestamp(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     local_db = tmp_path / "local.db"
-    local_db.write_bytes(b"content")
+    _make_sqlite_db(local_db)
     _patch(monkeypatch, nas_dir / "expenses.db", local_db)
 
     sync_to_nas()
@@ -384,7 +406,7 @@ def test_sync_to_nas_clears_lock_warning(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     local_db = tmp_path / "local.db"
-    local_db.write_bytes(b"content")
+    _make_sqlite_db(local_db)
     _patch(monkeypatch, nas_dir / "expenses.db", local_db)
     sync_mod._status["lock_warning"] = "other-machine"
 
@@ -435,7 +457,7 @@ def test_release_lock_removes_own_lock(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     local_db = tmp_path / "local.db"
-    local_db.write_bytes(b"content")
+    _make_sqlite_db(local_db)
     _patch(monkeypatch, nas_dir / "expenses.db", local_db)
 
     sync_to_nas()  # writes lock
@@ -535,3 +557,44 @@ def test_go_offline_clears_lock_warning(client, monkeypatch):
     monkeypatch.setitem(sync_mod._status, "lock_warning", "remote-host")
     client.post("/api/sync/go-offline")
     assert sync_mod._status["lock_warning"] is None
+
+
+# ── WAL safety ────────────────────────────────────────────────────────────────
+
+def test_sync_to_nas_includes_wal_data(monkeypatch, tmp_path):
+    """sync_to_nas must capture un-checkpointed WAL writes in the NAS copy."""
+    nas_dir = tmp_path / "nas"
+    nas_dir.mkdir()
+    nas_db = nas_dir / "expenses.db"
+    local_db = tmp_path / "local.db"
+    _patch(monkeypatch, nas_db, local_db)
+
+    # Set up DB in WAL mode with autocheckpoint disabled so writes stay in WAL.
+    writer = _sqlite3.connect(str(local_db))
+    writer.execute("PRAGMA journal_mode=WAL")
+    writer.execute("PRAGMA wal_autocheckpoint=0")
+    writer.execute("CREATE TABLE data (v TEXT)")
+    writer.execute("INSERT INTO data VALUES ('wal-row')")
+    writer.commit()
+
+    # Hold a reader connection open — prevents the auto-checkpoint that would
+    # otherwise run when the writer closes, keeping the WAL non-empty.
+    reader = _sqlite3.connect(str(local_db))
+    reader.execute("PRAGMA journal_mode=WAL")
+
+    writer.close()
+
+    wal_file = Path(str(local_db) + "-wal")
+    assert wal_file.exists() and wal_file.stat().st_size > 0, (
+        "WAL file must be non-empty to prove the row is not yet in the main DB"
+    )
+
+    sync_to_nas()
+
+    reader.close()
+
+    # The NAS copy must contain the row even though it was only in the WAL.
+    nas_conn = _sqlite3.connect(str(nas_db))
+    row = nas_conn.execute("SELECT v FROM data").fetchone()
+    nas_conn.close()
+    assert row is not None and row[0] == "wal-row"

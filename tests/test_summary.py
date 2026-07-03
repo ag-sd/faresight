@@ -155,3 +155,64 @@ def test_by_category_for_period_excludes_pending(client):
 def test_by_category_for_period_missing_year_returns_422(client):
     r = client.get("/api/summary/by-category-for-period")
     assert r.status_code == 422
+
+
+# ── account_type filtering ────────────────────────────────────────────────────
+
+def _make_account(client, account_type="credit_card", account_number="1111"):
+    r = client.post("/api/accounts", json={
+        "bank": "Test", "name": "Acct", "account_number": account_number,
+        "account_type": account_type,
+    })
+    assert r.status_code == 201
+    return r.json()["id"]
+
+
+def test_by_month_filters_by_credit_card(client):
+    cc_id  = _make_account(client, "credit_card", "1111")
+    chk_id = _make_account(client, "checking",    "2222")
+    make_tx(client, date="2026-01-01", amount=-100.00, account_id=cc_id)
+    make_tx(client, date="2026-01-01", amount=-200.00, account_id=chk_id)
+
+    rows = client.get("/api/summary/by-month?account_type=credit_card").json()
+    assert len(rows) == 1
+    assert rows[0]["total"] == -100.00
+
+
+def test_by_month_filters_by_bank(client):
+    cc_id  = _make_account(client, "credit_card", "1111")
+    chk_id = _make_account(client, "checking",    "2222")
+    sav_id = _make_account(client, "savings",     "3333")
+    make_tx(client, date="2026-02-01", amount=-50.00,  account_id=cc_id)
+    make_tx(client, date="2026-02-01", amount=-150.00, account_id=chk_id)
+    make_tx(client, date="2026-02-01", amount=-250.00, account_id=sav_id)
+
+    rows = client.get("/api/summary/by-month?account_type=bank").json()
+    assert len(rows) == 1
+    assert rows[0]["total"] == -400.00
+
+
+def test_by_category_for_period_filters_by_credit_card(client):
+    cc_id  = _make_account(client, "credit_card", "1111")
+    chk_id = _make_account(client, "checking",    "2222")
+    make_tx(client, date="2026-03-01", model_category="Dining & Takeout", model_confidence=8,
+            amount=-30.00, account_id=cc_id)
+    make_tx(client, date="2026-03-01", model_category="Dining & Takeout", model_confidence=8,
+            amount=-70.00, account_id=chk_id)
+
+    data = {r["category"]: r["total"]
+            for r in client.get("/api/summary/by-category-for-period?year=2026&account_type=credit_card").json()}
+    assert data.get("Dining & Takeout") == -30.00
+
+
+def test_by_category_for_period_filters_by_bank(client):
+    cc_id  = _make_account(client, "credit_card", "1111")
+    sav_id = _make_account(client, "savings",     "3333")
+    make_tx(client, date="2026-04-01", model_category="Groceries", model_confidence=9,
+            amount=-40.00, account_id=cc_id)
+    make_tx(client, date="2026-04-01", model_category="Groceries", model_confidence=9,
+            amount=-60.00, account_id=sav_id)
+
+    data = {r["category"]: r["total"]
+            for r in client.get("/api/summary/by-category-for-period?year=2026&account_type=bank").json()}
+    assert data.get("Groceries") == -60.00

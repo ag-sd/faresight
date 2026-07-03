@@ -42,6 +42,7 @@ def migrate_db() -> None:
             ("source_account_id", "INTEGER REFERENCES accounts(id)"),
             ("source_amount",     "REAL"),
             ("source_frequency",  "VARCHAR(10)"),
+            ("current_balance",   "REAL"),
         ]
         for col_name, col_def in new_columns:
             if col_name not in existing:
@@ -98,5 +99,14 @@ def migrate_db() -> None:
         if "file_id" not in tx_existing:
             conn.execute(text("DELETE FROM transactions"))
             conn.execute(text("ALTER TABLE transactions ADD COLUMN file_id INTEGER"))
+
+        # ── file_imports ──────────────────────────────────────────────────────
+        rows = conn.execute(text("PRAGMA table_info(file_imports)")).fetchall()
+        fi_existing = {row[1] for row in rows}
+
+        if "account_id" not in fi_existing:
+            conn.execute(text(
+                "ALTER TABLE file_imports ADD COLUMN account_id INTEGER REFERENCES accounts(id)"
+            ))
 
         conn.commit()

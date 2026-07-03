@@ -2,6 +2,7 @@
 let catChart, monthChart, txTable;
 let _accounts = [];
 let _byMonth = [];
+let _activeAccountType = 'credit_card';
 
 // ── Category colour palette ───────────────────────────────────────────────────
 const CATEGORY_COLORS = {
@@ -14,6 +15,7 @@ const CATEGORY_COLORS = {
   'Entertainment & Subscriptions': '#5e5ce6',
   'Travel':                        '#64d2ff',
   'Income':                        '#34c759',
+  'Payments':                      '#32ade6',
   'Transfers & Fees':              '#8e8e93',
   'Other':                         '#aeaeb2',
 };
@@ -28,6 +30,7 @@ function categoryColor(cat) {
 function initTxTable() {
   txTable = new Tabulator('#txTable', {
     ajaxURL: '/api/transactions',
+    ajaxParams: { account_type: _activeAccountType },
     pagination: true,
     paginationMode: 'remote',
     paginationSize: 25,
@@ -110,7 +113,7 @@ async function refreshCatChart() {
   const month = document.getElementById('catMonth').value;
   if (!year) return;
   const qs = month ? `?year=${year}&month=${month}` : `?year=${year}`;
-  const byCat = await api(`/api/summary/by-category-for-period${qs}`);
+  const byCat = await api(`/api/summary/by-category-for-period${qs}&account_type=credit_card`);
   if (catChart) catChart.destroy();
   catChart = new Chart(document.getElementById('catChart'), {
     type: 'pie',
@@ -147,7 +150,7 @@ function renderMonthChart() {
 }
 
 async function refreshCharts() {
-  _byMonth = await api('/api/summary/by-month');
+  _byMonth = await api('/api/summary/by-month?account_type=credit_card');
   populateYearPicker('catYear');
   populateYearPicker('monthYear');
   await Promise.all([refreshCatChart(), Promise.resolve(renderMonthChart())]);
@@ -203,4 +206,13 @@ initTxTable();
   // Default month picker to current month before first chart render
   document.getElementById('catMonth').value = String(new Date().getMonth() + 1);
   refreshAll();
+
+  document.querySelectorAll('#txTabs .nav-link').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#txTabs .nav-link').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _activeAccountType = btn.dataset.accountType;
+      txTable.setData('/api/transactions', { account_type: _activeAccountType });
+    });
+  });
 })();

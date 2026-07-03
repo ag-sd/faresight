@@ -177,7 +177,7 @@ async function refreshCategorizerStatus() {
 
 // ── Recent uploads table ──────────────────────────────────────────────────────
 
-function initImportTable() {
+function initImportTable(accountMap) {
   new Tabulator('#importTable', {
     ajaxURL: '/api/file-imports',
     pagination: true,
@@ -191,6 +191,10 @@ function initImportTable() {
     }),
     columns: [
       { title: 'File',          field: 'filename',       widthGrow: 3 },
+      {
+        title: 'Account', field: 'account_id', widthGrow: 2,
+        formatter: (cell) => accountMap[cell.getValue()] ?? '—',
+      },
       { title: 'Rows Seen',     field: 'rows_seen',      hozAlign: 'right', width: 120 },
       { title: 'Rows Imported', field: 'rows_persisted', hozAlign: 'right', width: 140 },
       {
@@ -209,8 +213,10 @@ async function init() {
     api('/api/importers'),
   ]);
 
+  const accountMap = {};
   const acctSel = document.getElementById('accountSelect');
   accounts.forEach(a => {
+    accountMap[a.id] = `${a.bank} — ${a.name}`;
     const opt = document.createElement('option');
     opt.value = a.id;
     opt.textContent = `${a.bank} — ${a.name} (${a.account_number})`;
@@ -224,10 +230,11 @@ async function init() {
     opt.textContent = name;
     impSel.appendChild(opt);
   });
+
+  return accountMap;
 }
 
-init();
-initImportTable();
+init().then(accountMap => initImportTable(accountMap));
 refreshCategorizerRunning();
 setInterval(refreshCategorizerRunning, 10000);
 refreshCategorizerStatus();

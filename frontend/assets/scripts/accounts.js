@@ -40,6 +40,16 @@ function initAccountsTable() {
         formatter: (cell) => ACCOUNT_TYPE_LABELS[cell.getValue()] ?? esc(String(cell.getValue())),
       },
       {
+        title: 'Balance', field: 'current_balance', hozAlign: 'right', width: 140,
+        formatter: (cell) => {
+          const row = cell.getRow().getData();
+          if (row.account_type === 'credit_card') return '—';
+          const val = cell.getValue();
+          if (val == null) return '<span class="text-muted">—</span>';
+          return '$' + parseFloat(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        },
+      },
+      {
         title: 'Status', field: 'is_active', width: 110, sorter: 'boolean',
         formatter: (cell) => cell.getValue()
           ? '<span class="badge rounded-pill bg-success">Active</span>'

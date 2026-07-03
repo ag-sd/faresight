@@ -2,10 +2,151 @@
 
 add beneficiaries as a list to the account object. Make it possbile to edit this list separately.
 
-Now lets revisit the idempotency of the file uploads. Lets restructure the code to allow for duplicates in the same file
-but prevent duplicates if the filename is different for a transaction given on the same date, category and amount.
-Draft a plan on how this would be implemented, and also capture all the code that needs to be deleted once this change is
-made. Additionally weigh on the pros and cons of this approach and identify any use-cases that would break due to this
+We are now going to add a new importer. THis is a capital one checking/savings transaction file. Review the contents of the csv
+and plan for how you will add this to the capital one loader. Remember debits are negative and credits are positive. A new
+feature here is that the transaction file has the current balance on the account. We should have a way to update the account object with
+the most recent balance from the transactions file
 
 
-So lets work on idempotency
+
+We will add a new tab
+
+
+High severity
+
+1. NAS sync can push a stale DB snapshot (WAL not checkpointed) — potential data loss
+
+app/database.py:14-18 enables WAL mode, so recent commits live in local.db-wal until a checkpoint. But sync_to_nas() (app/sync.py:219) and the startup backup/pull in sync_from_nas() copy only the main .db file with shutil.copyfile. A push right after imports can ship a NAS copy missing the latest transactions; another machine then pulls that stale copy and the periodic loop pushes it back — silently losing data. Bonus: the copy runs synchronously inside the asyncio loop.
+
+In /mnt/dev/faresight (FastAPI + SQLite expense tracker), app/database.py enables SQLite WAL mode via a connect-event PRAGMA. app/sync.py syncs the DB to/from a NAS by shutil.copyfile of LOCAL_DB_PATH only — it never checkpoints the WAL, so commits still sitting in local.db-wal are missing from every pushed copy (sync_to_nas), from the .db.bak backup, and the file may be copied mid-write.
+
+Fix: before every copy of the local DB in app/sync.py (sync_to_nas, the backup step and initial push in sync_from_nas), open a short-lived sqlite3 connection to LOCAL_DB_PATH and run PRAGMA wal_checkpoint(TRUNCATE), or better, use sqlite3.Connection.backup() to produce the file to copy. Put the logic in one helper (e.g. _snapshot_local_db) used by all copy sites. Do not change the pull direction (NAS→local) logic. Also move the blocking sync_to_nas() call in _periodic_sync_loop into asyncio.to_thread so it doesn't block the event loop.
+
+Constraints: tests monkeypatch app.sync.NAS_SHARE_PATH, app.sync.LOCAL_DB_PATH, app.sync._OWN_HOSTNAME, app.sync.SYNC_INTERVAL_MINUTES; keep those module-level globals referenced through the existing helpers. Python 3.14 — use Optional[T], not T | None, in any Pydantic/FastAPI signatures.
+
+Tests (required, in tests/test_sync.py): create a real temp SQLite DB in WAL mode, insert a row without checkpointing (verify the -wal file is non-empty), call sync_to_nas(), then open the pushed NAS copy fresh and assert the row is present. Run .venv/bin/pytest tests/ -v and make the whole suite pass before finishing. Do not read prompt-list.txt.
+
+2. Upload page "remove file" button is broken HTML and an XSS vector
+
+frontend/assets/scripts/upload.js:26 builds onclick="removeFile(${JSON.stringify(key)})". JSON.stringify emits double quotes inside a double-quoted attribute, so the attribute terminates early — clicking ✕ throws a syntax error and the file can never be removed. A crafted filename can also inject markup/JS through the same path.
+
+In /mnt/dev/faresight, frontend/assets/scripts/upload.js renderFileList() builds each file row with innerHTML and an inline onclick="removeFile(${JSON.stringify(key)})". JSON.stringify emits double quotes inside a double-quoted HTML attribute, so the attribute is truncated — the remove (✕) button is broken for every file — and a filename containing quotes/angle brackets can inject markup (XSS).
+
+Fix: stop generating inline onclick handlers from data. Build the <li> with document.createElement / textContent for the filename (keep the existing Bootstrap classes and the fa-regular fa-file / fa-xmark icons — this project only uses the fa-regular Font Awesome prefix), and attach the remove handler with button.addEventListener('click', () => removeFile(key)) so the key is closed over, never serialized into HTML. The esc() helper from frontend/assets/scripts/common.js remains available for other call sites; audit upload.js for any other place a filename or server string is interpolated into innerHTML (e.g. showResultModal) and make sure each is escaped.
+
+Tests: this repo has no JS test runner, so add a backend-side regression where possible and verify manually. Never launch the server against the real DB — use FARESIGHT_DB=$(mktemp --suffix=.db) uvicorn app.faresight:app --port 18765, load /upload, add a file named weird "name<img src=x onerror=alert(1)>.csv via the file input, and confirm the row renders the literal name and the ✕ button removes it. Run .venv/bin/pytest tests/ -v and keep it green. Do not read prompt-list.txt.
+
+3. Transfers table shows "undefined" — acct.nickname no longer exists
+
+frontend/assets/scripts/accounts.js:103 (accountCellFormatter) returns esc(acct.nickname), but the accounts API/model renamed nickname → name (see the rename migration in app/database.py:52-54 and AccountOut). Every From/To cell in the transfers table renders the string "undefined".
+
+In /mnt/dev/faresight, frontend/assets/scripts/accounts.js accountCellFormatter() returns esc(acct.nickname), but the Account API schema (app/schemas.py AccountOut) renamed nickname → name long ago — the field no longer exists, so every From/To cell in the transfers Tabulator table on /accounts renders "undefined".
+
+Fix: use acct.name. Then grep the whole frontend/ directory for any other stale reference to nickname on account API objects (DOM element ids like detailNickname are fine — only fix reads of the API field).
+
+Verification: never launch the server against the real DB — use FARESIGHT_DB=$(mktemp --suffix=.db) uvicorn app.faresight:app --port 18765; create two accounts via POST /api/accounts (one with source_account_id pointing at the other), open /accounts → Transfers tab, and confirm real account names render. Add whatever backend test coverage is practical (tests/test_accounts.py already exists; assert the serialized account JSON exposes name and not nickname so this regression class is caught server-side). Run .venv/bin/pytest tests/ -v; all green before done. Do not read prompt-list.txt.
+
+---
+Medium severity
+
+4. Dashboard tab switch doesn't stick across pagination
+
+frontend/assets/scripts/app.js:215 switches tabs with txTable.setData('/api/transactions', { account_type: _activeAccountType }), but the table was initialized with static ajaxParams: { account_type: _activeAccountType } (evaluated once at load, always credit_card). Params passed to setData don't durably replace ajaxParams, so clicking to page 2 on the "Checking & Savings" tab re-sends account_type=credit_card.
+
+In /mnt/dev/faresight, frontend/assets/scripts/app.js initTxTable() creates a Tabulator (v6.3, remote pagination) with ajaxParams: { account_type: _activeAccountType } — a static object captured once at init with value 'credit_card'. The tab click handler at the bottom of the file calls txTable.setData('/api/transactions', { account_type: _activeAccountType }), but subsequent pagination requests fall back to the static ajaxParams, so paging while on the "Checking & Savings" tab reloads credit-card rows.
+
+Fix: make ajaxParams a function — ajaxParams: () => ({ account_type: _activeAccountType }) — so every request (initial, pagination, refresh) reads the current tab. Simplify the tab handler to update _activeAccountType and call txTable.setData() (no args needed beyond triggering a reload back at page 1). Verify against Tabulator 6.3 docs that ajaxParams accepts a function; if not, use the documented mechanism for dynamic params in that version.
+
+Verification: never launch against the real DB — FARESIGHT_DB=$(mktemp --suffix=.db) uvicorn app.faresight:app --port 18765; seed >25 transactions on a checking account and a few on a credit card via the API (accounts via POST /api/accounts, transactions via POST /api/transactions — note it requires a file_id from a FileImport row, check tests/conftest.py make_tx for the pattern), then on / switch to Checking & Savings and go to page 2 — confirm the network request carries account_type=bank. Run .venv/bin/pytest tests/ -v and keep it green. Do not read prompt-list.txt.
+
+5. import-bulk returns 500 on malformed/binary files
+
+import_bulk (app/routers/transactions.py:212-216) calls the importer before any try/except. file_bytes.decode("utf-8-sig") in app/importers/capitalone.py raises UnicodeDecodeError on a binary upload (e.g. someone drops an .xlsx), producing an unhandled 500 instead of a per-file error. Also, one bad file aborts the whole multi-file batch.
+
+In /mnt/dev/faresight, POST /api/transactions/import-bulk (app/routers/transactions.py, import_bulk) calls the selected importer (app/importers/capitalone.py) with no exception handling around the parse phase. Both importers start with file_bytes.decode("utf-8-sig") — uploading a binary file (xlsx, pdf) raises UnicodeDecodeError and the endpoint 500s; any unexpected importer exception also kills the entire multi-file batch.
+
+Fix: wrap the per-file import_fn call in try/except; on failure, still record a FileImport row for that file with rows_seen=0/rows_persisted=0 and append {"filename": ..., "imported": 0, "errors": ["<human-readable parse failure>"]} to the results, then continue with the remaining files. Catch UnicodeDecodeError and csv.Error explicitly plus a broad Exception fallback (log it via the module logger). Do NOT change the per-row error handling inside the importers, and preserve the invariant that debit columns produce negative amounts and credits positive.
+
+Tests (required): extend tests/test_upload.py — upload bytes like b"\xff\xfe\x00binary" with a valid importer name and assert 200 with imported=0 and a non-empty errors list, plus a mixed batch (one good capitalone CSV fixture from tests/, one binary) asserting the good file's rows persist. Tests use the client fixture from tests/conftest.py (in-memory DB). Python 3.14: use Optional[T] from typing, never T | None, in any FastAPI/Pydantic signatures you touch. Run .venv/bin/pytest tests/ -v — all green. Do not read prompt-list.txt.
+
+6. Savings importer takes the account balance from the first CSV row, not the latest transaction
+
+app/importers/capitalone.py:68-69 sets account_balance from the first parsed row, silently assuming the export is newest-first. An ascending export (or a re-sorted file) writes a months-old balance onto the account. With multiple files in one upload, whichever file is processed last wins regardless of recency.
+
+In /mnt/dev/faresight, app/importers/capitalone.py import_checking_savings_csv sets account_balance from the first data row of the CSV, assuming Capital One exports newest-first. If the file is oldest-first (or re-sorted), a stale balance is written to Account.current_balance by import_bulk in app/routers/transactions.py. Sample fixture: tests/capitalone_savings_sample.csv (columns: Account Number, Transaction Description, Transaction Date, Transaction Type, Transaction Amount, Balance; dates are %m/%d/%y).
+
+Fix: track the balance of the row with the maximum transaction date while parsing (ties: last one parsed wins), and return that as ImportResult.account_balance. Keep the existing invariant: Debit rows → negative amount, Credit rows → positive amount. Keep per-row error handling as is (a row with an unparseable Balance should error that row, not crash the file).
+
+Tests (required): in tests/test_capitalone_savings.py add a case with rows in ascending date order asserting the returned account_balance matches the newest row, and one for descending order (existing behavior). Also add/extend an upload-level test (tests/test_upload.py, client fixture from conftest.py) asserting Account.current_balance ends up as the newest row's balance. Python 3.14: Optional[T], not T | None. Run .venv/bin/pytest tests/ -v — all green. Do not read prompt-list.txt.
+
+7. "Monthly Spending" and category charts conflate spending with payments/income
+
+/api/summary/by-month sums all amounts (charges negative, CC payments positive), and app.js then plots Math.abs(net). For a card paid in full, net ≈ 0, so the "Spending" bar is meaningless; a month where payments exceed charges displays as positive spending. The category pie has the same abs-of-net problem and includes the "Payments"/"Income" categories.
+
+In /mnt/dev/faresight, the dashboard charts misrepresent spending. Backend: /api/summary/by-month and /api/summary/by-category-for-period (app/routers/transactions.py) sum ALL transaction amounts — for credit cards that mixes charges (negative, per the repo invariant: debits negative / credits positive) with card payments (positive), so the monthly net is ~0 for a card paid in full. Frontend: frontend/assets/scripts/app.js renderMonthChart/refreshCatChart then take Math.abs of that net, so "payments > charges" months render as fake spending.
+
+Fix on the backend so the numbers are honest at the source: add an optional spending_only: bool = False query param (FastAPI, Python 3.14 — use Optional[T]/plain bool defaults, never T | None) to both endpoints; when true, filter to Transaction.amount < 0 and additionally exclude rows whose effective category is "Payments" (use model_category since that's what the period-category endpoint already groups by), then return the summed absolute value as a positive total. Leave default behavior unchanged for other consumers. Update app.js to request spending_only=true for both charts and drop the Math.abs calls. Keep chart colors/labels as they are.
+
+Tests (required): extend tests/test_summary.py using the client fixture and the make_tx(client, **kwargs) helper from tests/conftest.py — seed a month containing charges, a "Payments"-categorized payment, and a refund; assert the spending_only totals count only the charges and are positive, and that the default (no param) responses are unchanged. Run .venv/bin/pytest tests/ -v — all green. Do not read prompt-list.txt.
+
+8. SQLite foreign keys are never enforced + file_id schema drift
+
+SQLite ignores FKs unless PRAGMA foreign_keys=ON per connection — the connect hook in app/database.py only sets WAL. So POST /api/transactions happily accepts a nonexistent file_id/account_id, and deleting rows can strand orphans. Related drift: Transaction.file_id is nullable=False in app/models.py:40, but migrate_db() adds the column without NOT NULL, so migrated DBs and fresh DBs disagree.
+
+In /mnt/dev/faresight (SQLAlchemy 2 + SQLite), foreign keys are declared on models (app/models.py: Transaction.account_id → accounts.id, Transaction.file_id → file_imports.id, FileImport.account_id, Account.source_account_id) but SQLite never enforces them: the connect event listener in app/database.py only sets PRAGMA journal_mode=WAL. POST /api/transactions accepts a nonexistent file_id or account_id.
+
+Fix: (1) In the existing connect listener in app/database.py, also execute PRAGMA foreign_keys=ON. (2) Run the full test suite — .venv/bin/pytest tests/ -v — and fix any test fixtures/endpoints that were silently relying on unenforced FKs (tests/conftest.py's make_tx helper creates transactions; it may need a real FileImport row). (3) In app/routers/transactions.py create_transaction, validate account_id and file_id existence explicitly and return 422 with a clear message instead of letting the commit raise IntegrityError as a 500. (4) Note the schema drift: app/models.py declares file_id NOT NULL but migrate_db() in app/database.py added it without NOT NULL on migrated DBs — don't rewrite the table; just document the drift with a comment in migrate_db and make sure enforcement works on both shapes.
+
+Tests (required): in tests/test_transactions.py add cases asserting POST with a bogus file_id and bogus account_id return 422 (not 500/201). Python 3.14: Optional[T], never T | None, in Pydantic/FastAPI signatures. All tests green before done. Do not read prompt-list.txt.
+
+9. Table header filters, sorting, and CSV export silently operate on one page only
+
+The dashboard table uses remote pagination but leaves Tabulator's filter/sort in local mode, and the backend ignores sort/filter params. Typing in the Description filter filters only the 25 loaded rows; clicking the Date header re-sorts only the current page; "Export CSV" (index.html:96) exports one page. Users will reasonably believe they searched/exported everything.
+
+In /mnt/dev/faresight, the dashboard transactions Tabulator (frontend/assets/scripts/app.js initTxTable, Tabulator 6.3, paginationMode:'remote') has headerFilter:'input' on several columns and initialSort on date, but filterMode/sortMode default to local — so filters and sorts apply only to the 25 rows of the current page, and GET /api/transactions (app/routers/transactions.py list_transactions) ignores sort/filter params entirely. The "Export CSV" button (txTable.download) also exports only the loaded page.
+
+Fix end to end:
+1. Backend list_transactions: accept optional query params sort_field (whitelist: date, amount, description), sort_dir (asc/desc, default date desc as today), and per-column substring filters (description, category) — apply with ilike for text. Python 3.14: use Optional[str] etc. from typing, never str | None.
+2. Frontend: set filterMode:'remote' and sortMode:'remote' on the table and map Tabulator's outgoing param names to the backend's via the existing dataSendParams/ajaxURLGenerator mechanism (check Tabulator 6.3 docs for the exact remote sort/filter param shapes).
+3. Export: point the CSV button at a real full export — add GET /api/transactions/export.csv streaming all rows matching the current account_type/filters (use the same query builder as list_transactions), and change the button to hit that URL with the current params.
+
+Tests (required, tests/test_transactions.py, client fixture + make_tx helper from tests/conftest.py): sorting asc/desc by amount, description substring filter across pages, and the CSV export containing all matching rows with a text/csv content type. Run .venv/bin/pytest tests/ -v — all green. Do not read prompt-list.txt.
+
+---
+Low severity / hygiene
+
+10. Categorizer worker: delayed first cycle and SIGTERM that doesn't actually interrupt
+
+app/categorizer.py:394-397 sleeps before the first poll (fresh uploads wait a full interval after boot), and because of PEP 475 time.sleep resumes after the SIGTERM handler runs, so _shutdown isn't observed until the sleep finishes — the parent ends up escalating to kill() after its 10s wait.
+
+In /mnt/dev/faresight, app/categorizer.py's __main__ worker loop (spawned as a subprocess by _spawn_categorizer in app/faresight.py) has two lifecycle flaws: (1) it sleeps CATEGORIZATION_POLL_INTERVAL_S before the first poll, so pending rows sit idle after startup; (2) the SIGTERM handler only sets a flag, and per PEP 475 time.sleep() resumes after the handler returns, so shutdown waits out the full sleep and the parent (lifespan in app/faresight.py) escalates from terminate() to kill() after 10s.
+
+Fix: replace the sleep-first loop with: poll immediately on startup, then wait between cycles using threading.Event — module-level _shutdown_event = threading.Event(); the SIGTERM handler calls _shutdown_event.set(); the loop waits with _shutdown_event.wait(timeout=CATEGORIZATION_POLL_INTERVAL_S) (wait() IS interrupted promptly when set from a signal handler) and exits when set. Keep the per-cycle SessionLocal lifecycle and the broad exception logging exactly as they are, and keep the module importable without side effects (everything stays under if __name__ == "__main__" except the event definition).
+
+Tests (required): tests/test_categorizer.py already monkeypatches the HTTP seams (_get_tags/_start_ollama/_generate). Add a test that the loop body function (extract the loop into a testable run_worker(poll_interval, shutdown_event) function) processes pending rows once immediately and exits promptly when the event is set. Run .venv/bin/pytest tests/ -v — all green. Do not read prompt-list.txt.
+
+11. CLAUDE.md is stale and two config flags are dead
+
+CLAUDE.md describes the categorizer as an in-process asyncio task started in the lifespan (_categorization_loop), but app/faresight.py:19-20,33 spawns a subprocess (python -m app.categorizer) and the docstring in app/categorizer.py agrees. Separately, SYNC_ON_STARTUP / SYNC_ON_SHUTDOWN are loaded in app/config.py:19-20 but never referenced — sync always runs unconditionally.
+
+In /mnt/dev/faresight, two hygiene fixes: (1) CLAUDE.md's "Transaction categorization" section describes an in-process asyncio background task (_categorization_loop started in lifespan), but the real implementation (app/faresight.py _spawn_categorizer + app/categorizer.py __main__) is a separate subprocess launched with sys.executable -m app.categorizer, health-checked via /api/categorizer/running (checks proc.poll()). Rewrite that CLAUDE.md section to match reality — subprocess lifecycle (spawned at startup, terminate/wait(10)/kill at shutdown), polling via SessionLocal per cycle, and the FARESIGHT_DB env inheritance. Do not touch the "Off-limits files" section and never read prompt-list.txt. (2) app/config.py loads SYNC_ON_STARTUP and SYNC_ON_SHUTDOWN but nothing references them — app/faresight.py syncs unconditionally. Wire them up: lifespan should skip sync_mod.sync_from_nas() when SYNC_ON_STARTUP is false and skip the final sync_to_nas() when SYNC_ON_SHUTDOWN is false (still always _release_lock()). Check config.yaml for the current values so behavior doesn't silently change — if they're false/absent there while sync is currently active in practice, flip the defaults in app/config.py to True to preserve today's behavior.
+
+Tests (required): add lifecycle tests (pattern: monkeypatch app.faresight/app.sync functions, use fastapi TestClient with the lifespan) asserting sync_from_nas is/isn't called per flag. Run .venv/bin/pytest tests/ -v — all green.
+
+12. Charts are hardcoded to credit cards while the table has tabs
+
+app.js fetches /api/summary/by-month?account_type=credit_card and pins the pie chart to credit_card too, regardless of the active tab. Minor UX inconsistency — worth doing after #4 and #7 since it touches the same code.
+
+In /mnt/dev/faresight, the dashboard (frontend/assets/scripts/app.js + frontend/app/pages/index.html) has Credit Cards / Checking & Savings tabs that switch the transactions table (_activeAccountType, values 'credit_card' | 'bank'), but both charts hardcode account_type=credit_card (refreshCharts and refreshCatChart). Make the charts follow the active tab: thread _activeAccountType into the by-month and by-category-for-period requests and re-run refreshCharts() from the existing tab click handler. Keep the year/month pickers' selected values stable across tab switches when the year still exists in the new data (populateYearPicker already tries to preserve selection — verify it survives). The backend endpoints already accept account_type via _filter_by_account_type in app/routers/transactions.py; no backend changes expected — but note _filter_by_account_type inner-joins accounts, so transactions with NULL account_id vanish from any filtered view; if you touch it, preserve that behavior and don't change unfiltered endpoints.
+
+Tests (required): backend coverage for by-month and by-category-for-period with account_type='bank' vs 'credit_card' in tests/test_summary.py using make_tx + accounts created via POST /api/accounts. Verify the UI manually — never against the real DB: FARESIGHT_DB=$(mktemp --suffix=.db) uvicorn app.faresight:app --port 18765. Run .venv/bin/pytest tests/ -v — all green. Do not read prompt-list.txt.
+
+---
+Noted but not prompted (judgment calls for you)
+
+- No import idempotency — hash_code dedup was deliberately removed (per the migration comment), so re-uploading the same CSV duplicates every row. If that removal wasn't intentional as a permanent state, a per-file content hash on FileImport with a "already imported" warning would be cheap insurance.
+- _filter_by_account_type inner-joins accounts (app/routers/transactions.py:25), so transactions with account_id = NULL appear in neither dashboard tab — invisible rows. Currently all import paths set account_id, so it's latent.
+- AccountUpdate has no current_balance — the importer writes balances but there's no way to correct one manually.
+- Migration DELETE FROM transactions when adding file_id (app/database.py:100) — already shipped, but that pattern (destructive migration on the live DB) is worth avoiding going forward.
+
+The three high-severity items (#1 WAL sync, #2 upload remove button, #3 nickname regression) are the ones I'd hand to Sonnet first — #1 is the only one that can lose data, and #2/#3 are user-visible breakage on every use of those pages.

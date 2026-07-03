@@ -236,6 +236,50 @@ def test_delete_does_not_affect_other_transactions(client):
     assert remaining[0]["id"] == tx1["id"]
 
 
+# ── account_type filter ───────────────────────────────────────────────────────
+
+def test_account_type_filter_credit_card(client):
+    cc_id  = _make_account(client, account_type="credit_card")
+    chk_id = _make_account(client, account_number="5678", account_type="checking")
+    make_tx(client, account_id=cc_id,  description="cc charge")
+    make_tx(client, account_id=chk_id, description="bank charge")
+    make_tx(client,                    description="unlinked")
+
+    data = client.get("/api/transactions?account_type=credit_card").json()["data"]
+    assert len(data) == 1
+    assert data[0]["description"] == "cc charge"
+
+
+def test_account_type_filter_bank(client):
+    cc_id  = _make_account(client, account_type="credit_card")
+    chk_id = _make_account(client, account_number="5678", account_type="checking")
+    sav_id = _make_account(client, account_number="9999", account_type="savings")
+    make_tx(client, account_id=cc_id,  description="cc charge")
+    make_tx(client, account_id=chk_id, description="checking tx")
+    make_tx(client, account_id=sav_id, description="savings tx")
+
+    data = client.get("/api/transactions?account_type=bank").json()["data"]
+    descriptions = {tx["description"] for tx in data}
+    assert descriptions == {"checking tx", "savings tx"}
+
+
+def test_account_type_filter_excludes_unlinked(client):
+    make_tx(client, description="no account")
+    assert client.get("/api/transactions?account_type=credit_card").json()["data"] == []
+    assert client.get("/api/transactions?account_type=bank").json()["data"] == []
+
+
+def test_no_account_type_filter_returns_all(client):
+    cc_id  = _make_account(client, account_type="credit_card")
+    chk_id = _make_account(client, account_number="5678", account_type="checking")
+    make_tx(client, account_id=cc_id,  description="cc")
+    make_tx(client, account_id=chk_id, description="bank")
+    make_tx(client,                    description="unlinked")
+
+    total = client.get("/api/transactions").json()["total"]
+    assert total == 3
+
+
 # ── Categorizer running ───────────────────────────────────────────────────────
 
 def test_categorizer_running_when_proc_alive(client):

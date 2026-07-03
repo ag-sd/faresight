@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.config import PAGE_SIZE
 from app.database import get_db
 from app.importers import IMPORTERS
-from app.models import Account, FileImport, Transaction
+from app.models import Account, AccountType, FileImport, Transaction
 from app.schemas import FileImportOut, PaginatedFileImports, PaginatedTransactions, TransactionCreate, TransactionCreateWithFile, TransactionOut, TransactionUpdate
 
 router = APIRouter(prefix="/api", tags=["transactions"])
@@ -16,17 +16,31 @@ router = APIRouter(prefix="/api", tags=["transactions"])
 logger = logging.getLogger(__name__)
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _filter_by_account_type(q, account_type: Optional[str]):
+    """Join accounts and filter by type. 'bank' matches checking + savings."""
+    if not account_type:
+        return q
+    q = q.join(Account, Transaction.account_id == Account.id)
+    if account_type == "credit_card":
+        return q.filter(Account.account_type == AccountType.credit_card)
+    return q.filter(Account.account_type.in_([AccountType.checking, AccountType.savings]))
+
+
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
 @router.get("/transactions", response_model=PaginatedTransactions)
 def list_transactions(
     category: Optional[str] = None,
+    account_type: Optional[str] = None,
     page: int = 1,
     limit: int = PAGE_SIZE,
     db: Session = Depends(get_db),
 ):
     offset = (page - 1) * limit
     q = db.query(Transaction)
+    q = _filter_by_account_type(q, account_type)
     if category:
         q = q.filter(Transaction.category == category)
     total = q.count()
@@ -77,12 +91,10 @@ def delete_transaction(tx_id: int, db: Session = Depends(get_db)):
 # ── Summary / charts ──────────────────────────────────────────────────────────
 
 @router.get("/summary/by-category")
-def summary_by_category(db: Session = Depends(get_db)):
-    rows = (
-        db.query(Transaction.category, func.sum(Transaction.amount).label("total"))
-        .group_by(Transaction.category)
-        .all()
-    )
+def summary_by_category(account_type: Optional[str] = None, db: Session = Depends(get_db)):
+    q = db.query(Transaction.category, func.sum(Transaction.amount).label("total"))
+    q = _filter_by_account_type(q, account_type)
+    rows = q.group_by(Transaction.category).all()
     return [{"category": r.category, "total": round(r.total, 2)} for r in rows]
 
 
@@ -101,17 +113,14 @@ def summary_by_model_category(db: Session = Depends(get_db)):
 
 
 @router.get("/summary/by-month")
-def summary_by_month(db: Session = Depends(get_db)):
-    rows = (
-        db.query(
-            extract("year", Transaction.date).label("year"),
-            extract("month", Transaction.date).label("month"),
-            func.sum(Transaction.amount).label("total"),
-        )
-        .group_by("year", "month")
-        .order_by("year", "month")
-        .all()
+def summary_by_month(account_type: Optional[str] = None, db: Session = Depends(get_db)):
+    q = db.query(
+        extract("year", Transaction.date).label("year"),
+        extract("month", Transaction.date).label("month"),
+        func.sum(Transaction.amount).label("total"),
     )
+    q = _filter_by_account_type(q, account_type)
+    rows = q.group_by("year", "month").order_by("year", "month").all()
     return [
         {"year": int(r.year), "month": int(r.month), "total": round(r.total, 2)}
         for r in rows
@@ -122,6 +131,7 @@ def summary_by_month(db: Session = Depends(get_db)):
 def summary_by_category_for_period(
     year: int,
     month: Optional[int] = None,
+    account_type: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     q = (
@@ -132,6 +142,7 @@ def summary_by_category_for_period(
             extract("year", Transaction.date) == year,
         )
     )
+    q = _filter_by_account_type(q, account_type)
     if month is not None:
         q = q.filter(extract("month", Transaction.date) == month)
     rows = q.group_by(Transaction.model_category).all()
@@ -206,7 +217,7 @@ async def import_bulk(
 
     for filename, result in parsed:
         rows_seen = len(result.transactions) + len(result.errors)
-        log = FileImport(filename=filename, rows_seen=rows_seen, rows_persisted=0)
+        log = FileImport(filename=filename, rows_seen=rows_seen, rows_persisted=0, account_id=account_id)
         db.add(log)
         db.flush()  # populate log.id before inserting transactions
 
@@ -218,6 +229,10 @@ async def import_bulk(
             imported += 1
 
         log.rows_persisted = imported
+
+        if result.account_balance is not None:
+            account.current_balance = result.account_balance
+
         results.append({"filename": filename, "imported": imported, "errors": result.errors})
 
     db.commit()

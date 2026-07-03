@@ -178,6 +178,7 @@ erDiagram
         int      rows_seen
         int      rows_persisted
         datetime loaded_at
+        int      account_id   FK
     }
 
     accounts {
@@ -192,6 +193,7 @@ erDiagram
         int      source_account_id FK
         float    source_amount
         string   source_frequency
+        float    current_balance
     }
 
     transactions {
@@ -211,6 +213,7 @@ erDiagram
     file_imports  ||--o{ transactions : "file_id"
     accounts      |o--o{ transactions : "account_id"
     accounts      |o--o{ accounts     : "source_account_id"
+    accounts      |o--o{ file_imports : "account_id"
 ```
 
 ## Roadmap

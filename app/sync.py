@@ -22,6 +22,7 @@ import logging
 import os
 import shutil
 import socket
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -119,6 +120,27 @@ def _check_foreign_lock() -> Optional[str]:
     return None
 
 
+# ── Local DB snapshot (WAL-safe) ──────────────────────────────────────────────
+
+def _snapshot_local_db(dest: Path) -> None:
+    """Copy LOCAL_DB_PATH to dest as a consistent snapshot, WAL data included.
+
+    Uses sqlite3.Connection.backup() so un-checkpointed WAL writes are captured
+    without modifying the source file. Safe to call while the app holds open
+    connections to the source DB.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    src = sqlite3.connect(str(LOCAL_DB_PATH))
+    try:
+        dst = sqlite3.connect(str(dest))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+
+
 # ── Reachability ──────────────────────────────────────────────────────────────
 
 def _nas_reachable() -> bool:
@@ -162,8 +184,7 @@ def sync_from_nas() -> None:
     # ── 3. NAS file absent → first-run push ───────────────────────────────
     if not nas_path.exists():
         if LOCAL_DB_PATH.exists():
-            nas_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(str(LOCAL_DB_PATH), str(nas_path))
+            _snapshot_local_db(nas_path)
             _write_marker(nas_path.stat().st_mtime)
             _write_lock()
             logger.info("NAS sync: first run — pushed local DB → %s", nas_path)
@@ -180,7 +201,7 @@ def sync_from_nas() -> None:
     if last_pull is None or nas_mtime > last_pull:
         if LOCAL_DB_PATH.exists():
             bak = LOCAL_DB_PATH.with_suffix(".db.bak")
-            shutil.copyfile(str(LOCAL_DB_PATH), str(bak))
+            _snapshot_local_db(bak)
             logger.info("NAS sync: backed up local DB → %s", bak)
 
         LOCAL_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -215,8 +236,7 @@ def sync_to_nas() -> None:
         return
 
     nas_path = Path(NAS_SHARE_PATH)
-    nas_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(str(LOCAL_DB_PATH), str(nas_path))
+    _snapshot_local_db(nas_path)
     _write_marker(nas_path.stat().st_mtime)
     _write_lock()
 
@@ -243,4 +263,4 @@ async def _periodic_sync_loop() -> None:
     logger.info("NAS sync: background loop started (every %d min)", SYNC_INTERVAL_MINUTES)
     while True:
         await asyncio.sleep(interval)
-        sync_to_nas()
+        await asyncio.to_thread(sync_to_nas)

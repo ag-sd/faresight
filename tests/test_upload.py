@@ -161,7 +161,7 @@ def test_import_bulk_errors_do_not_block_other_files(client):
 # ── Categorization wiring ─────────────────────────────────────────────────────
 
 def test_import_bulk_marks_transactions_pending(client):
-    """Regular rows are pending; payment rows are pre-classified as Transfers & Fees."""
+    """Regular rows are pending; payment rows are pre-classified as Payments."""
     acct = _make_account(client)
     csv_bytes = SAMPLE_CSV.read_bytes()
     client.post(
@@ -170,8 +170,8 @@ def test_import_bulk_marks_transactions_pending(client):
         files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
     )
     txs = client.get("/api/transactions?limit=100").json()["data"]
-    regular = [tx for tx in txs if tx["model_category"] != "Transfers & Fees"]
-    payments = [tx for tx in txs if tx["model_category"] == "Transfers & Fees"]
+    regular = [tx for tx in txs if tx["model_category"] != "Payments"]
+    payments = [tx for tx in txs if tx["model_category"] == "Payments"]
     assert len(txs) == 13
     assert all(tx["model_confidence"] is None for tx in regular)
     assert len(payments) == 2
