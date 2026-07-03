@@ -1,0 +1,6 @@
+Account Number,Transaction Description,Transaction Date,Transaction Type,Transaction Amount,Balance
+1543,Withdrawal from FID BKG SVC LLC MONEYLINE,06/23/26,Debit,500,151632.53
+1543,Deposit from 360 Checking XXXXXXX2701,06/22/26,Credit,20000,152132.53
+1543,"Preauthorized Deposit from BANK OF AMERICA, N.A. checking account XXXXXXXX3999",06/03/26,Credit,758,132132.53
+1543,Monthly Interest Paid,05/31/26,Credit,339.94,131374.53
+1543,Withdrawal to 360 Checking XXXXXXX2701,04/14/26,Debit,65000,129869.66
