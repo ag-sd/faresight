@@ -403,3 +403,57 @@ def test_categorizer_status_excludes_null_confidence(client):
     r = client.get("/api/categorizer/status").json()
     assert r["pending"] == 0
     assert r["categorized"] == 0
+
+
+# ── Binary / parse-failure resilience ────────────────────────────────────────
+
+BINARY_BYTES = b"\xff\xfe\x00binary\x00junk"
+
+
+def test_binary_upload_returns_200_with_error(client):
+    """Binary file (UnicodeDecodeError) produces 200 with imported=0 and a non-empty errors list."""
+    acct = _make_account(client)
+    r = client.post(
+        "/api/transactions/import-bulk",
+        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        files=[("files", ("bad.xlsx", BINARY_BYTES, "application/octet-stream"))],
+    )
+    assert r.status_code == 200
+    results = r.json()
+    assert len(results) == 1
+    assert results[0]["imported"] == 0
+    assert len(results[0]["errors"]) > 0
+
+
+def test_binary_upload_does_not_persist_transactions(client):
+    acct = _make_account(client)
+    client.post(
+        "/api/transactions/import-bulk",
+        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        files=[("files", ("bad.xlsx", BINARY_BYTES, "application/octet-stream"))],
+    )
+    assert client.get("/api/transactions").json()["total"] == 0
+
+
+def test_mixed_batch_binary_does_not_abort_good_file(client):
+    """One binary + one valid CSV: the good file's rows are persisted, batch returns 200."""
+    acct = _make_account(client)
+    good_csv = SAMPLE_CSV.read_bytes()
+    r = client.post(
+        "/api/transactions/import-bulk",
+        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        files=[
+            ("files", ("bad.xlsx",   BINARY_BYTES, "application/octet-stream")),
+            ("files", ("good.csv",   good_csv,     "text/csv")),
+        ],
+    )
+    assert r.status_code == 200
+    results = r.json()
+    assert len(results) == 2
+    bad  = next(x for x in results if x["filename"] == "bad.xlsx")
+    good = next(x for x in results if x["filename"] == "good.csv")
+    assert bad["imported"] == 0
+    assert len(bad["errors"]) > 0
+    assert good["imported"] == 13
+    assert good["errors"] == []
+    assert client.get("/api/transactions").json()["total"] == 13

@@ -1,3 +1,4 @@
+import csv
 import logging
 from typing import List, Optional
 
@@ -209,13 +210,22 @@ async def import_bulk(
     import_fn = IMPORTERS[importer]
     results = []
 
-    parsed = []
     for file in files:
+        filename = file.filename
         file_bytes = await file.read()
-        result = import_fn(file_bytes, account)
-        parsed.append((file.filename, result))
+        try:
+            result = import_fn(file_bytes, account)
+        except (UnicodeDecodeError, csv.Error) as exc:
+            logger.warning("Parse failed for %r: %s", filename, exc)
+            db.add(FileImport(filename=filename, rows_seen=0, rows_persisted=0, account_id=account_id))
+            results.append({"filename": filename, "imported": 0, "errors": [f"Could not parse file: {exc}"]})
+            continue
+        except Exception as exc:
+            logger.error("Unexpected error importing %r: %s", filename, exc, exc_info=True)
+            db.add(FileImport(filename=filename, rows_seen=0, rows_persisted=0, account_id=account_id))
+            results.append({"filename": filename, "imported": 0, "errors": [f"Unexpected error: {exc}"]})
+            continue
 
-    for filename, result in parsed:
         rows_seen = len(result.transactions) + len(result.errors)
         log = FileImport(filename=filename, rows_seen=rows_seen, rows_persisted=0, account_id=account_id)
         db.add(log)
