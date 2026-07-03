@@ -51,6 +51,27 @@ def test_create_invalid_date_returns_422(client):
     assert r.status_code == 422
 
 
+def test_create_nonexistent_file_id_returns_422(client):
+    r = client.post(
+        "/api/transactions",
+        json={"date": "2026-01-01", "description": "x", "amount": -1, "category": "x", "file_id": 9999},
+    )
+    assert r.status_code == 422
+    assert "FileImport" in r.json()["detail"] or "file" in r.json()["detail"].lower()
+
+
+def test_create_nonexistent_account_id_returns_422(client):
+    from tests.conftest import _make_file_import
+    fid = _make_file_import()
+    r = client.post(
+        "/api/transactions",
+        json={"date": "2026-01-01", "description": "x", "amount": -1, "category": "x",
+              "file_id": fid, "account_id": 9999},
+    )
+    assert r.status_code == 422
+    assert "Account" in r.json()["detail"] or "account" in r.json()["detail"].lower()
+
+
 # ── Read ──────────────────────────────────────────────────────────────────────
 
 def test_list_empty(client):

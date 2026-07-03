@@ -12,9 +12,10 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 @event.listens_for(engine, "connect")
-def _set_wal_mode(dbapi_conn, _):
+def _set_sqlite_pragmas(dbapi_conn, _):
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
 
@@ -98,6 +99,9 @@ def migrate_db() -> None:
 
         if "file_id" not in tx_existing:
             conn.execute(text("DELETE FROM transactions"))
+            # Schema drift: fresh DBs (models.py) declare file_id NOT NULL; migrated DBs
+            # get it as nullable because SQLite ALTER TABLE cannot add NOT NULL without a
+            # default. Do not rewrite the table — both shapes satisfy our insert path.
             conn.execute(text("ALTER TABLE transactions ADD COLUMN file_id INTEGER"))
 
         # ── file_imports ──────────────────────────────────────────────────────

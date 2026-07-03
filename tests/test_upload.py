@@ -370,7 +370,9 @@ def test_import_bulk_filename_with_special_chars_preserved(client):
     they reach the frontend.
     """
     acct = _make_account(client)
-    special_name = 'weird "name<img src=x onerror=alert(1)>.csv'
+    # Double-quote is percent-encoded by httpx's multipart transport, so we use
+    # angle brackets (the critical XSS injection chars) which pass through verbatim.
+    special_name = 'weird <img src=x onerror=alert(1)>.csv'
     csv_bytes = SAMPLE_CSV.read_bytes()
     r = client.post(
         "/api/transactions/import-bulk",

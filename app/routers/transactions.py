@@ -51,6 +51,10 @@ def list_transactions(
 
 @router.post("/transactions", response_model=TransactionOut, status_code=201)
 def create_transaction(body: TransactionCreateWithFile, db: Session = Depends(get_db)):
+    if not db.get(FileImport, body.file_id):
+        raise HTTPException(status_code=422, detail=f"FileImport {body.file_id} does not exist")
+    if body.account_id is not None and not db.get(Account, body.account_id):
+        raise HTTPException(status_code=422, detail=f"Account {body.account_id} does not exist")
     tx = Transaction(**body.model_dump())
     db.add(tx)
     db.commit()
