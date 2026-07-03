@@ -276,6 +276,28 @@ def test_create_with_inactive_source_returns_422(client):
     assert "not active" in r.json()["detail"].lower()
 
 
+# ── Schema shape (field-rename regression guards) ─────────────────────────────
+
+def test_account_response_has_name_not_nickname(client):
+    r = client.post("/api/accounts", json={
+        "bank": "Chase", "name": "Sapphire", "account_number": "1234",
+        "account_type": "credit_card",
+    })
+    assert r.status_code == 201
+    data = r.json()
+    assert "name" in data
+    assert data["name"] == "Sapphire"
+    assert "nickname" not in data
+
+
+def test_list_accounts_response_has_name_not_nickname(client):
+    _make_account(client)
+    data = client.get("/api/accounts").json()
+    assert len(data) > 0
+    assert "name" in data[0]
+    assert "nickname" not in data[0]
+
+
 # ── Bank logos ────────────────────────────────────────────────────────────────
 
 def test_get_bank_logos(client):

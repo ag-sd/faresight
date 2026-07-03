@@ -100,7 +100,7 @@ function accountCellFormatter(cell, _p, onRendered) {
   el.setAttribute('data-bs-html', 'true');
   el.setAttribute('title', buildAccountTooltip(acct));
   onRendered(() => bootstrap.Tooltip.getOrCreateInstance(el));
-  return esc(acct.nickname);
+  return esc(acct.name);
 }
 
 function initTransfersTable() {
