@@ -23,6 +23,7 @@ import os
 import shutil
 import socket
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -33,6 +34,11 @@ logger = logging.getLogger(__name__)
 
 # Resolved once at import; can be monkeypatched in tests.
 _OWN_HOSTNAME: str = socket.gethostname()
+
+# Serializes pushes: the periodic loop, POST /api/sync, and shutdown can all
+# call sync_to_nas concurrently, and two sqlite connections writing the same
+# NAS file rely on POSIX locks that are unreliable on network mounts.
+_push_lock = threading.Lock()
 
 _status: dict = {
     "reachable": None,
@@ -152,6 +158,33 @@ def _snapshot_local_db(dest: Path) -> None:
         src.close()
 
 
+def _push_snapshot_to_nas(nas_path: Path) -> None:
+    """Snapshot the local DB to the NAS atomically.
+
+    Writes to a sibling temp file and renames it over the destination, so a
+    crash or dropped mount mid-push cannot leave a torn NAS file — the
+    previous good copy survives until the rename.
+    """
+    tmp = Path(str(nas_path) + ".tmp")
+    try:
+        _snapshot_local_db(tmp)
+        os.replace(str(tmp), str(nas_path))
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _integrity_ok(path: Path) -> bool:
+    """True when the SQLite file at path passes PRAGMA quick_check."""
+    try:
+        conn = sqlite3.connect(str(path))
+        try:
+            return conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return False
+
+
 # ── Reachability ──────────────────────────────────────────────────────────────
 
 def _nas_reachable() -> bool:
@@ -195,7 +228,7 @@ def sync_from_nas() -> None:
     # ── 3. NAS file absent → first-run push ───────────────────────────────
     if not nas_path.exists():
         if LOCAL_DB_PATH.exists():
-            _snapshot_local_db(nas_path)
+            _push_snapshot_to_nas(nas_path)
             _write_marker(nas_path.stat().st_mtime)
             _write_lock()
             logger.info("NAS sync: first run — pushed local DB → %s", nas_path)
@@ -210,6 +243,7 @@ def sync_from_nas() -> None:
     last_pull = _read_marker()
 
     if last_pull is None or nas_mtime > last_pull:
+        bak: Optional[Path] = None
         if LOCAL_DB_PATH.exists():
             bak = LOCAL_DB_PATH.with_suffix(".db.bak")
             _snapshot_local_db(bak)
@@ -221,6 +255,18 @@ def sync_from_nas() -> None:
         # local run would otherwise be replayed on top of it and corrupt it.
         Path(str(LOCAL_DB_PATH) + "-wal").unlink(missing_ok=True)
         Path(str(LOCAL_DB_PATH) + "-shm").unlink(missing_ok=True)
+
+        if not _integrity_ok(LOCAL_DB_PATH):
+            if bak is not None:
+                shutil.copyfile(str(bak), str(LOCAL_DB_PATH))
+                detail = "corrupt NAS file — restored local backup"
+            else:
+                LOCAL_DB_PATH.unlink(missing_ok=True)
+                detail = "corrupt NAS file — no local backup to restore"
+            logger.error("NAS sync: pulled file failed integrity check; %s", detail)
+            _status.update({"last_action": "pull_failed_integrity", "detail": detail})
+            return  # no marker update, no lock claim
+
         _write_marker(nas_mtime)
         ts = datetime.fromtimestamp(nas_mtime).isoformat(timespec="seconds")
         logger.info("NAS sync: pulled update from NAS (NAS last modified %s)", ts)
@@ -236,33 +282,35 @@ def sync_to_nas() -> None:
     """
     Push local DB → NAS. No-op when sync is disabled or NAS is unreachable.
     Overwrites any existing lock (claiming ownership). Clears lock_warning.
+    Serialized by _push_lock — callers may overlap (loop / API / shutdown).
     """
-    if not _status.get("sync_enabled", True):
-        logger.info("NAS sync: sync disabled for this session — skipping push")
-        return
+    with _push_lock:
+        if not _status.get("sync_enabled", True):
+            logger.info("NAS sync: sync disabled for this session — skipping push")
+            return
 
-    if not _nas_reachable():
-        logger.warning("NAS sync: share unreachable — skipping push")
-        _status["reachable"] = False
-        return
+        if not _nas_reachable():
+            logger.warning("NAS sync: share unreachable — skipping push")
+            _status["reachable"] = False
+            return
 
-    if not LOCAL_DB_PATH.exists():
-        logger.warning("NAS sync: local DB does not exist — nothing to push")
-        return
+        if not LOCAL_DB_PATH.exists():
+            logger.warning("NAS sync: local DB does not exist — nothing to push")
+            return
 
-    nas_path = Path(NAS_SHARE_PATH)
-    _snapshot_local_db(nas_path)
-    _write_marker(nas_path.stat().st_mtime)
-    _write_lock()
+        nas_path = Path(NAS_SHARE_PATH)
+        _push_snapshot_to_nas(nas_path)
+        _write_marker(nas_path.stat().st_mtime)
+        _write_lock()
 
-    ts = datetime.now().isoformat(timespec="seconds")
-    logger.info("NAS sync: pushed local DB → %s", nas_path)
-    _status.update({
-        "reachable": True,
-        "last_action": "pushed_update",
-        "last_push": ts,
-        "lock_warning": None,   # claiming the lock clears any conflict
-    })
+        ts = datetime.now().isoformat(timespec="seconds")
+        logger.info("NAS sync: pushed local DB → %s", nas_path)
+        _status.update({
+            "reachable": True,
+            "last_action": "pushed_update",
+            "last_push": ts,
+            "lock_warning": None,   # claiming the lock clears any conflict
+        })
 
 
 def disable_sync() -> None:
@@ -278,4 +326,9 @@ async def _periodic_sync_loop() -> None:
     logger.info("NAS sync: background loop started (every %d min)", SYNC_INTERVAL_MINUTES)
     while True:
         await asyncio.sleep(interval)
-        await asyncio.to_thread(sync_to_nas)
+        try:
+            await asyncio.to_thread(sync_to_nas)
+        except Exception:
+            # A failed push (e.g. NAS dropped mid-write) must not kill the
+            # loop — the next interval retries.
+            logger.exception("NAS sync: periodic push failed")

@@ -16,6 +16,9 @@ def _set_sqlite_pragmas(dbapi_conn, _):
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA foreign_keys=ON")
+    # The categorizer runs as a separate process against the same file; wait
+    # for its write locks instead of failing with "database is locked".
+    cursor.execute("PRAGMA busy_timeout=5000")
     cursor.close()
 
 

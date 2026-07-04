@@ -117,14 +117,14 @@ def test_pulls_when_no_marker_exists(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     nas_db = nas_dir / "expenses.db"
-    nas_db.write_bytes(b"nas-content")
+    _make_sqlite_db(nas_db, "nas-content")
     local_dir = tmp_path / "local"
     local_dir.mkdir()
     local_db = local_dir / "local.db"
     _make_sqlite_db(local_db, "old-local")
     _patch(monkeypatch, nas_db, local_db)
     sync_from_nas()
-    assert local_db.read_bytes() == b"nas-content"
+    assert _read_sqlite_value(local_db) == "nas-content"
     assert sync_mod._status["last_action"] == "pulled_update"
 
 
@@ -132,7 +132,7 @@ def test_pulls_when_nas_is_newer_than_marker(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     nas_db = nas_dir / "expenses.db"
-    nas_db.write_bytes(b"updated-nas")
+    _make_sqlite_db(nas_db, "updated-nas")
     local_dir = tmp_path / "local"
     local_dir.mkdir()
     local_db = local_dir / "local.db"
@@ -140,7 +140,7 @@ def test_pulls_when_nas_is_newer_than_marker(monkeypatch, tmp_path):
     Path(str(local_db) + ".synced_at").write_text(str(nas_db.stat().st_mtime - 100))
     _patch(monkeypatch, nas_db, local_db)
     sync_from_nas()
-    assert local_db.read_bytes() == b"updated-nas"
+    assert _read_sqlite_value(local_db) == "updated-nas"
     assert sync_mod._status["last_action"] == "pulled_update"
 
 
@@ -163,11 +163,40 @@ def test_pull_removes_stale_local_wal_sidecars(monkeypatch, tmp_path):
     assert _read_sqlite_value(local_db) == "from-nas"
 
 
+def test_pull_of_corrupt_nas_file_restores_local_backup(monkeypatch, tmp_path):
+    nas_db = tmp_path / "nas" / "expenses.db"
+    nas_db.parent.mkdir(parents=True)
+    nas_db.write_bytes(b"this is not a sqlite database")
+    local_db = tmp_path / "local.db"
+    _make_sqlite_db(local_db, "precious-local")
+    _patch(monkeypatch, nas_db, local_db)
+
+    sync_from_nas()
+
+    assert sync_mod._status["last_action"] == "pull_failed_integrity"
+    assert _read_sqlite_value(local_db) == "precious-local"
+    assert not Path(str(local_db) + ".synced_at").exists()   # no marker
+    assert not Path(str(nas_db) + ".lock").exists()          # no lock claim
+
+
+def test_pull_of_corrupt_nas_file_without_local_removes_bad_pull(monkeypatch, tmp_path):
+    nas_db = tmp_path / "nas" / "expenses.db"
+    nas_db.parent.mkdir(parents=True)
+    nas_db.write_bytes(b"this is not a sqlite database")
+    local_db = tmp_path / "local.db"
+    _patch(monkeypatch, nas_db, local_db)
+
+    sync_from_nas()
+
+    assert sync_mod._status["last_action"] == "pull_failed_integrity"
+    assert not local_db.exists()
+
+
 def test_pull_creates_backup_of_existing_local(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     nas_db = nas_dir / "expenses.db"
-    nas_db.write_bytes(b"nas-content")
+    _make_sqlite_db(nas_db, "nas-content")
     local_dir = tmp_path / "local"
     local_dir.mkdir()
     local_db = local_dir / "local.db"
@@ -183,21 +212,21 @@ def test_pull_no_backup_when_local_absent(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     nas_db = nas_dir / "expenses.db"
-    nas_db.write_bytes(b"nas-content")
+    _make_sqlite_db(nas_db, "nas-content")
     local_dir = tmp_path / "local"
     local_dir.mkdir()
     local_db = local_dir / "local.db"
     _patch(monkeypatch, nas_db, local_db)
     sync_from_nas()
     assert not local_db.with_suffix(".db.bak").exists()
-    assert local_db.read_bytes() == b"nas-content"
+    assert _read_sqlite_value(local_db) == "nas-content"
 
 
 def test_pull_writes_marker_with_nas_mtime(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     nas_db = nas_dir / "expenses.db"
-    nas_db.write_bytes(b"nas-content")
+    _make_sqlite_db(nas_db, "nas-content")
     expected_mtime = nas_db.stat().st_mtime
     local_dir = tmp_path / "local"
     local_dir.mkdir()
@@ -212,12 +241,12 @@ def test_pull_creates_local_parent_dir_if_missing(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     nas_db = nas_dir / "expenses.db"
-    nas_db.write_bytes(b"content")
+    _make_sqlite_db(nas_db, "content")
     local_db = tmp_path / "deep" / "nested" / "local.db"
     _patch(monkeypatch, nas_db, local_db)
     sync_from_nas()
     assert local_db.exists()
-    assert local_db.read_bytes() == b"content"
+    assert _read_sqlite_value(local_db) == "content"
 
 
 # ── sync_from_nas: skip ───────────────────────────────────────────────────────
@@ -259,7 +288,7 @@ def test_lock_written_after_pull(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     nas_db = nas_dir / "expenses.db"
-    nas_db.write_bytes(b"nas-content")
+    _make_sqlite_db(nas_db, "nas-content")
     local_dir = tmp_path / "local"
     local_dir.mkdir()
     local_db = local_dir / "local.db"
@@ -338,7 +367,7 @@ def test_own_lock_does_not_block(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     nas_db = nas_dir / "expenses.db"
-    nas_db.write_bytes(b"nas-content")
+    _make_sqlite_db(nas_db, "nas-content")
     _write_lock_file(nas_dir, hostname="testhost", age_seconds=30)
     local_db = tmp_path / "local.db"
     _patch(monkeypatch, nas_db, local_db)
@@ -346,14 +375,14 @@ def test_own_lock_does_not_block(monkeypatch, tmp_path):
     sync_from_nas()
 
     assert sync_mod._status["lock_warning"] is None
-    assert local_db.read_bytes() == b"nas-content"
+    assert _read_sqlite_value(local_db) == "nas-content"
 
 
 def test_stale_foreign_lock_is_ignored(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
     nas_db = nas_dir / "expenses.db"
-    nas_db.write_bytes(b"nas-content")
+    _make_sqlite_db(nas_db, "nas-content")
     # Age is 10 minutes = 600 s, interval is 5 min — lock is stale
     _write_lock_file(nas_dir, hostname="other-machine", age_seconds=600)
     local_db = tmp_path / "local.db"
@@ -362,7 +391,7 @@ def test_stale_foreign_lock_is_ignored(monkeypatch, tmp_path):
     sync_from_nas()
 
     assert sync_mod._status["lock_warning"] is None
-    assert local_db.read_bytes() == b"nas-content"
+    assert _read_sqlite_value(local_db) == "nas-content"
 
 
 # ── sync_to_nas ───────────────────────────────────────────────────────────────
@@ -407,6 +436,91 @@ def test_push_snapshot_is_self_contained_despite_wal_source(monkeypatch, tmp_pat
     check = _sqlite3.connect(str(nas_db))
     assert check.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
     check.close()
+
+
+def test_push_leaves_no_tmp_file(monkeypatch, tmp_path):
+    nas_dir = tmp_path / "nas"
+    nas_dir.mkdir()
+    nas_db = nas_dir / "expenses.db"
+    local_db = tmp_path / "local.db"
+    _make_sqlite_db(local_db, "fresh")
+    _patch(monkeypatch, nas_db, local_db)
+
+    sync_to_nas()
+
+    assert _read_sqlite_value(nas_db) == "fresh"
+    assert not Path(str(nas_db) + ".tmp").exists()
+
+
+def test_failed_push_preserves_previous_nas_copy(monkeypatch, tmp_path):
+    """A crash mid-snapshot must not destroy the last good NAS copy."""
+    nas_dir = tmp_path / "nas"
+    nas_dir.mkdir()
+    nas_db = nas_dir / "expenses.db"
+    _make_sqlite_db(nas_db, "old-good")
+    local_db = tmp_path / "local.db"
+    _make_sqlite_db(local_db, "newer-local")
+    _patch(monkeypatch, nas_db, local_db)
+
+    def boom(dest):
+        Path(dest).write_bytes(b"partial garbage")  # simulate torn write
+        raise RuntimeError("mount dropped")
+
+    monkeypatch.setattr(sync_mod, "_snapshot_local_db", boom)
+    with pytest.raises(RuntimeError):
+        sync_to_nas()
+
+    assert _read_sqlite_value(nas_db) == "old-good"
+    assert not Path(str(nas_db) + ".tmp").exists()
+
+
+def test_first_run_push_leaves_no_tmp_file(monkeypatch, tmp_path):
+    nas_dir = tmp_path / "nas"
+    nas_dir.mkdir()
+    nas_db = nas_dir / "expenses.db"
+    local_db = tmp_path / "local.db"
+    _make_sqlite_db(local_db, "first")
+    _patch(monkeypatch, nas_db, local_db)
+
+    sync_from_nas()  # NAS file absent → first-run push
+
+    assert sync_mod._status["last_action"] == "pushed_initial"
+    assert _read_sqlite_value(nas_db) == "first"
+    assert not Path(str(nas_db) + ".tmp").exists()
+
+
+def test_concurrent_pushes_are_serialized(monkeypatch, tmp_path):
+    import threading
+    import time
+
+    nas_dir = tmp_path / "nas"
+    nas_dir.mkdir()
+    nas_db = nas_dir / "expenses.db"
+    local_db = tmp_path / "local.db"
+    _make_sqlite_db(local_db, "v1")
+    _patch(monkeypatch, nas_db, local_db)
+
+    orig = sync_mod._snapshot_local_db
+    state = {"active": 0, "max_active": 0}
+    guard = threading.Lock()
+
+    def slow_snapshot(dest):
+        with guard:
+            state["active"] += 1
+            state["max_active"] = max(state["max_active"], state["active"])
+        time.sleep(0.05)
+        orig(dest)
+        with guard:
+            state["active"] -= 1
+
+    monkeypatch.setattr(sync_mod, "_snapshot_local_db", slow_snapshot)
+
+    threads = [threading.Thread(target=sync_to_nas) for _ in range(3)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    assert state["max_active"] == 1, "pushes overlapped despite _push_lock"
+    assert _read_sqlite_value(nas_db) == "v1"
 
 
 def test_sync_to_nas_writes_marker(monkeypatch, tmp_path):
