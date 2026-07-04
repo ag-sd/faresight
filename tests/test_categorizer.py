@@ -133,8 +133,29 @@ def test_build_prompt_includes_batch_and_categories():
     prompt = cz.build_prompt([{"id": 0, "description": "Blue Bottle Coffee", "amount": -5.0}])
     assert "Blue Bottle Coffee" in prompt
     for category in cz.ALLOWED_CATEGORIES:
-        assert category in prompt
+        assert f"- {category}:" in prompt  # rendered as a described allow-list line
     assert "Score honestly" in prompt  # rubric present — not the old stub
+
+
+def test_allowed_categories_derives_from_descriptions():
+    # CATEGORY_DESCRIPTIONS is the single source of truth; the allow-list and the
+    # prompt block are both derived from it and can never drift.
+    assert list(cz.CATEGORY_DESCRIPTIONS) == cz.ALLOWED_CATEGORIES
+    for cat, desc in cz.CATEGORY_DESCRIPTIONS.items():
+        assert isinstance(desc, str) and desc.strip(), f"{cat} missing a description"
+
+    prompt = cz.build_prompt([{"id": 0, "description": "x", "amount": -1.0}])
+    for cat, desc in cz.CATEGORY_DESCRIPTIONS.items():
+        assert f"- {cat}: {desc}" in prompt
+
+
+def test_build_prompt_uses_split_transfer_categories():
+    # "Transfers & Fees" was split into four distinct labels.
+    prompt = cz.build_prompt([{"id": 0, "description": "x", "amount": -1.0}])
+    assert "Transfers & Fees" not in prompt
+    for category in ("Transfers", "Fees", "Interest Income", "Interest Paid"):
+        assert category in cz.ALLOWED_CATEGORIES
+        assert category in prompt
 
 
 def test_apply_other_from_model_preserves_confidence():

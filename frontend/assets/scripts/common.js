@@ -22,7 +22,10 @@ const CATEGORY_COLORS = {
   'Travel':                        '#64d2ff',
   'Income':                        '#34c759',
   'Payments':                      '#32ade6',
-  'Transfers & Fees':              '#8e8e93',
+  'Transfers':                     '#8e8e93',
+  'Fees':                          '#a2845e',
+  'Interest Income':               '#63c88a',
+  'Interest Paid':                 '#c9557e',
   'Other':                         '#aeaeb2',
 };
 

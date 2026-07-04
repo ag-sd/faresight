@@ -20,9 +20,11 @@ logger = logging.getLogger(__name__)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 # Subset of app.categorizer.ALLOWED_CATEGORIES — money movement, not spending.
-# TODO(planned): split "Transfers & Fees" into "Transfers" (excluded) and
-# "Fees" (real spending, counted). This tuple is the single point to update.
-TRANSFER_CATEGORIES = ("Payments", "Transfers & Fees")
+# "Transfers & Fees" was split into Transfers/Fees/Interest Income/Interest Paid:
+# only Transfers is money movement and excluded here. Fees and Interest Paid are
+# real spending, and Interest Income is real income — all three are counted.
+# This tuple is the single point to update.
+TRANSFER_CATEGORIES = ("Payments", "Transfers")
 
 
 def _filter_by_account_type(q, account_type: Optional[str]):

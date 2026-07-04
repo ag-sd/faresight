@@ -92,6 +92,15 @@ def migrate_db() -> None:
             "UPDATE transactions SET model_confidence = -1 WHERE model_confidence IS NULL"
         ))
 
+        # Category split: "Transfers & Fees" → Transfers / Fees / Interest Income /
+        # Interest Paid. Re-queue model-suggested rows so the worker reassigns them;
+        # skip user-edited rows (their write-back is guarded on user_modified_category).
+        # Idempotent: once the worker rewrites model_category, the label no longer matches.
+        conn.execute(text(
+            "UPDATE transactions SET model_confidence = -1 "
+            "WHERE model_category = 'Transfers & Fees' AND user_modified_category = 0"
+        ))
+
         # Drop hash_code (idempotency removed) and its unique index.
         if "hash_code" in tx_existing:
             conn.execute(text("DROP INDEX IF EXISTS ix_transactions_hash_code"))

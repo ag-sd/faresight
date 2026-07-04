@@ -279,12 +279,37 @@ def test_by_category_for_period_excludes_transfers(client):
     make_tx(client, date="2026-05-02", amount=-500.00,
             model_category="Payments", model_confidence=10)
     make_tx(client, date="2026-05-03", amount=-12.00,
-            model_category="Transfers & Fees", model_confidence=10)
+            model_category="Transfers", model_confidence=10)
 
     for qs in ("", "&account_type=all"):
         data = {r["category"]: r["total"]
                 for r in client.get(f"/api/summary/by-category-for-period?year=2026{qs}").json()}
         assert data == {"Groceries": -80.00}
+
+
+def test_by_category_for_period_counts_fees_and_interest(client):
+    # The old "Transfers & Fees" bucket was split: only Transfers is money movement.
+    # Fees and Interest Paid are real spending; Interest Income is real income —
+    # all three must appear in the summary (unlike the excluded Transfers/Payments).
+    make_tx(client, date="2026-05-01", amount=-80.00,
+            model_category="Groceries", model_confidence=9)
+    make_tx(client, date="2026-05-02", amount=-12.00,
+            model_category="Fees", model_confidence=10)
+    make_tx(client, date="2026-05-03", amount=-30.00,
+            model_category="Interest Paid", model_confidence=10)
+    make_tx(client, date="2026-05-04", amount=5.00,
+            model_category="Interest Income", model_confidence=10)
+    make_tx(client, date="2026-05-05", amount=-99.00,
+            model_category="Transfers", model_confidence=10)
+
+    data = {r["category"]: r["total"]
+            for r in client.get("/api/summary/by-category-for-period?year=2026").json()}
+    assert data == {
+        "Groceries": -80.00,
+        "Fees": -12.00,
+        "Interest Paid": -30.00,
+        "Interest Income": 5.00,
+    }
 
 
 def test_by_category_excludes_rows_with_transfer_model_category(client):

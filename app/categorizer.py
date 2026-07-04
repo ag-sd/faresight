@@ -36,21 +36,36 @@ logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 5
 
-# Single source of truth shared by the prompt builder and the validator.
-ALLOWED_CATEGORIES = [
-    "Groceries",
-    "Dining & Takeout",
-    "Transportation",
-    "Housing & Utilities",
-    "Shopping",
-    "Health & Personal Care",
-    "Entertainment & Subscriptions",
-    "Travel",
-    "Income",
-    "Payments",
-    "Transfers & Fees",
-    "Other",
-]
+# Single source of truth: canonical label → one-line description for the model.
+# Order is significant — it drives both the prompt block (build_prompt) and the
+# allow-list. Dicts preserve insertion order (Python 3.7+).
+CATEGORY_DESCRIPTIONS = {
+    "Groceries": "supermarkets, grocery and food markets",
+    "Dining & Takeout": "restaurants, cafes, bars, coffee, food delivery",
+    "Transportation": "gas, parking, rideshare, transit, tolls, auto maintenance",
+    "Housing & Utilities": "rent, mortgage, electric, water, gas, internet, phone",
+    "Shopping": "retail, online marketplaces, clothing, electronics, household goods",
+    "Health & Personal Care": "pharmacy, doctors, dental, gym, salons",
+    "Entertainment & Subscriptions": "streaming, games, events, movies, memberships",
+    "Travel": "flights, hotels, car rentals, vacation spend",
+    "Income": "paychecks, deposits, refunds, dividends",
+    "Payments": "credit card payments, loan payments, bill pay",
+    "Transfers": "account-to-account transfers, ATM withdrawals, moving money",
+    "Fees": "bank fees, service charges, overdraft, late fees, foreign-transaction fees",
+    "Interest Income": "interest earned on savings, checking, CDs, and bonds (money in)",
+    "Interest Paid": "interest charged on credit cards, loans, mortgages; finance charges (money out)",
+    "Other": "use ONLY when no category above clearly fits",
+}
+
+# Public allow-list, derived — preserves the existing list contract for the
+# validator (_CANONICAL) and tests. Do not maintain this by hand.
+ALLOWED_CATEGORIES = list(CATEGORY_DESCRIPTIONS)
+
+# Rendered "- <label>: <description>" block injected into build_prompt so the
+# prompt's category list can never drift from CATEGORY_DESCRIPTIONS.
+_CATEGORY_BLOCK = "\n".join(
+    f"- {name}: {desc}" for name, desc in CATEGORY_DESCRIPTIONS.items()
+)
 
 # Fallback used when the model output is invalid, missing, or unparseable.
 FALLBACK_CATEGORY = "Other"
@@ -140,7 +155,7 @@ def _wait_for_ollama() -> list[str]:
     )
 
 
-# ── Prompt (STUB — real prompt engineering lands later) ─────────────────────────
+# ── Prompt  ─────────────────────────
 
 def build_prompt(batch: list[dict]) -> str:
     """Build the inference prompt for a batch of transactions."""
@@ -151,18 +166,7 @@ def build_prompt(batch: list[dict]) -> str:
         "money in) as signals.\n"
         "\n"
         "ALLOWED CATEGORIES (use these labels exactly):\n"
-        "- Groceries: supermarkets, grocery and food markets\n"
-        "- Dining & Takeout: restaurants, cafes, bars, coffee, food delivery\n"
-        "- Transportation: gas, parking, rideshare, transit, tolls, auto maintenance\n"
-        "- Housing & Utilities: rent, mortgage, electric, water, gas, internet, phone\n"
-        "- Shopping: retail, online marketplaces, clothing, electronics, household goods\n"
-        "- Health & Personal Care: pharmacy, doctors, dental, gym, salons\n"
-        "- Entertainment & Subscriptions: streaming, games, events, movies, memberships\n"
-        "- Travel: flights, hotels, car rentals, vacation spend\n"
-        "- Income: paychecks, deposits, refunds, interest, dividends\n"
-        "- Payments: credit card payments, loan payments, bill pay\n"
-        "- Transfers & Fees: account transfers, ATM, bank fees, taxes, loans\n"
-        "- Other: use ONLY when no category above clearly fits\n"
+        f"{_CATEGORY_BLOCK}\n"
         "\n"
         "CONFIDENCE SCORE (integer 0-10):\n"
         "- 10 = the description names a known merchant that maps cleanly to one category.\n"
@@ -174,7 +178,7 @@ def build_prompt(batch: list[dict]) -> str:
         "\n"
         "RULES:\n"
         "- Pick the single best category. Do not invent new labels.\n"
-        "- A positive amount is usually Income or Transfers & Fees, not a spending category.\n"
+        "- A positive amount is usually Income, Interest Income, or Transfers, not a spending category.\n"
         "- If genuinely unsure, use \"Other\" and a low confidence score.\n"
         "\n"
         "EXAMPLES:\n"
