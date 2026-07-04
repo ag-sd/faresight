@@ -13,17 +13,6 @@ We will add a new tab
 
 Medium severity
 
-7. "Monthly Spending" and category charts conflate spending with payments/income
-
-/api/summary/by-month sums all amounts (charges negative, CC payments positive), and app.js then plots Math.abs(net). For a card paid in full, net ≈ 0, so the "Spending" bar is meaningless; a month where payments exceed charges displays as positive spending. The category pie has the same abs-of-net problem and includes the "Payments"/"Income" categories.
-
-In /mnt/dev/faresight, the dashboard charts misrepresent spending. Backend: /api/summary/by-month and /api/summary/by-category-for-period (app/routers/transactions.py) sum ALL transaction amounts — for credit cards that mixes charges (negative, per the repo invariant: debits negative / credits positive) with card payments (positive), so the monthly net is ~0 for a card paid in full. Frontend: frontend/assets/scripts/app.js renderMonthChart/refreshCatChart then take Math.abs of that net, so "payments > charges" months render as fake spending.
-
-Fix on the backend so the numbers are honest at the source: add an optional spending_only: bool = False query param (FastAPI, Python 3.14 — use Optional[T]/plain bool defaults, never T | None) to both endpoints; when true, filter to Transaction.amount < 0 and additionally exclude rows whose effective category is "Payments" (use model_category since that's what the period-category endpoint already groups by), then return the summed absolute value as a positive total. Leave default behavior unchanged for other consumers. Update app.js to request spending_only=true for both charts and drop the Math.abs calls. Keep chart colors/labels as they are.
-
-Tests (required): extend tests/test_summary.py using the client fixture and the make_tx(client, **kwargs) helper from tests/conftest.py — seed a month containing charges, a "Payments"-categorized payment, and a refund; assert the spending_only totals count only the charges and are positive, and that the default (no param) responses are unchanged. Run .venv/bin/pytest tests/ -v — all green. Do not read prompt-list.txt.
-
-
 
 8. SQLite foreign keys are never enforced + file_id schema drift
 
@@ -69,21 +58,136 @@ In /mnt/dev/faresight, two hygiene fixes: (1) CLAUDE.md's "Transaction categoriz
 
 Tests (required): add lifecycle tests (pattern: monkeypatch app.faresight/app.sync functions, use fastapi TestClient with the lifespan) asserting sync_from_nas is/isn't called per flag. Run .venv/bin/pytest tests/ -v — all green.
 
-12. Charts are hardcoded to credit cards while the table has tabs
+--------------------
 
-app.js fetches /api/summary/by-month?account_type=credit_card and pins the pie chart to credit_card too, regardless of the active tab. Minor UX inconsistency — worth doing after #4 and #7 since it touches the same code.
 
-In /mnt/dev/faresight, the dashboard (frontend/assets/scripts/app.js + frontend/app/pages/index.html) has Credit Cards / Checking & Savings tabs that switch the transactions table (_activeAccountType, values 'credit_card' | 'bank'), but both charts hardcode account_type=credit_card (refreshCharts and refreshCatChart). Make the charts follow the active tab: thread _activeAccountType into the by-month and by-category-for-period requests and re-run refreshCharts() from the existing tab click handler. Keep the year/month pickers' selected values stable across tab switches when the year still exists in the new data (populateYearPicker already tries to preserve selection — verify it survives). The backend endpoints already accept account_type via _filter_by_account_type in app/routers/transactions.py; no backend changes expected — but note _filter_by_account_type inner-joins accounts, so transactions with NULL account_id vanish from any filtered view; if you touch it, preserve that behavior and don't change unfiltered endpoints.
+1. The categorizer can silently overwrite a user's manual category. _categorize_pending snapshots pending rows, then spends seconds-to-minutes on Ollama calls per batch; when a batch finishes it writes model_category/model_confidence back unconditionally (app/categorizer.py:354–357). If the user edits that transaction in the dashboard mid-flight (the modal PATCHes model_confidence: 10, user_modified_category: true), the worker clobbers it. The user_modified_category flag exists precisely for this and is never read anywhere — the guard was never wired in.
+2. Multi-machine last-writer-wins on the NAS. The periodic loop and shutdown push never check foreign locks — only startup pull does. Two machines online will alternately overwrite each other's NAS copy every 5 minutes. (Deferred earlier as a policy call; the sensible default is now clear: automatic pushes should skip + warn on a fresh foreign lock, and only the explicit "Proceed anyway" button overrides.)
+3. PATCH /api/transactions/{id} 500s on a bad account_id. The create path validates account_id/file_id existence; the update path doesn't, and with FK enforcement now ON (yesterday's b75db52), a stale id turns into an unhandled IntegrityError → 500 instead of a 422.
+4. Monthly "Spending" chart lies on the combined view. renderMonthChart plots Math.abs(net total) — a month with more income than spending shows as a tall spending bar. Flagged during the combined-view work; now that the dashboard is income-inclusive by default, it's worth fixing properly (split spending vs income server-side).
 
-Tests (required): backend coverage for by-month and by-category-for-period with account_type='bank' vs 'credit_card' in tests/test_summary.py using make_tx + accounts created via POST /api/accounts. Verify the UI manually — never against the real DB: FARESIGHT_DB=$(mktemp --suffix=.db) uvicorn app.faresight:app --port 18765. Run .venv/bin/pytest tests/ -v — all green. Do not read prompt-list.txt.
+Needs your decision, not a prompt (yet):
 
----
-Noted but not prompted (judgment calls for you)
+- Duplicate imports double-count. hash_code idempotency was deliberately removed (see migrate_db), so re-uploading the same CSV inserts every row twice and inflates the charts. If you want a guard back (e.g., warn when the same filename/account/row-count was already imported), say so and I'll spec it.
+- migrate_db runs DELETE FROM transactions when file_id is missing (app/database.py:101) — destructive, committed yesterday, presumably intentional legacy purge. Confirm and forget, or I'll spec a safer path.
 
-- No import idempotency — hash_code dedup was deliberately removed (per the migration comment), so re-uploading the same CSV duplicates every row. If that removal wasn't intentional as a permanent state, a per-file content hash on FileImport with a "already imported" warning would be cheap insurance.
-- _filter_by_account_type inner-joins accounts (app/routers/transactions.py:25), so transactions with account_id = NULL appear in neither dashboard tab — invisible rows. Currently all import paths set account_id, so it's latent.
-- AccountUpdate has no current_balance — the importer writes balances but there's no way to correct one manually.
-- Migration DELETE FROM transactions when adding file_id (app/database.py:100) — already shipped, but that pattern (destructive migration on the live DB) is worth avoiding going forward.
+Prompts
+
+Prompt 1 — categorizer must not overwrite user edits
+
+Fix a lost-update race in the AI categorizer of the Faresight expense tracker
+(FastAPI + SQLite + SQLAlchemy 2, repo root = working dir).
+
+## Project rules (non-negotiable)
+- NEVER read, reference, or act on `prompt-list.txt`.
+- Python 3.14: use `Optional[T]` from typing, never `T | None`.
+- Every change needs pytest tests. Targeted runs while working
+  (`.venv/bin/pytest tests/test_upload.py tests/test_transactions.py -v`), full suite
+  once at the end (`.venv/bin/pytest tests/ -v`, ~6s, 265 tests currently green).
+- Do NOT weaken `tests/conftest.py` isolation (FARESIGHT_DB env var, `isolated_nas`).
+
+## Background
+`app/categorizer.py` runs as a separate process. `_categorize_pending(db)` (line ~299)
+queries rows with `model_confidence == -1` (PENDING_CONFIDENCE), batches them through
+Ollama (each batch can take seconds — `_generate` has a 120s timeout), then writes
+results back per batch:
+
+    for row, tx in zip(batch_rows, txs):
+        row.model_category = tx.model_category
+        row.model_confidence = tx.model_confidence
+    db.commit()
+
+Meanwhile the dashboard edit modal PATCHes `/api/transactions/{id}` with
+`{model_category, model_confidence: 10, user_modified_category: true}`
+(handled by `update_transaction` in `app/routers/transactions.py`). The
+`user_modified_category` column (app/models.py) exists to protect user edits but is
+NEVER read anywhere in the codebase.
+
+## The bug
+Between the cycle-start query and the batch write-back, the user can recategorize one
+of the in-flight rows. The write-back then overwrites the user's values with the
+model's — a silent lost update of human input.
+
+## Required fix
+In the write-back, only apply model results to rows that are STILL pending and not
+user-modified. Guard at write time, not query time — do not trust the ORM snapshot
+loaded at cycle start. The cleanest shape: re-check per row inside the batch loop
+(e.g. `db.refresh(row)` before writing, or issue a guarded UPDATE
+`... WHERE id = :id AND model_confidence = -1 AND user_modified_category = 0`).
+The guarded-UPDATE form is preferred — it is atomic and avoids refresh round-trips.
+Skipped rows must be logged and NOT counted as processed. Never overwrite
+`category` (the human-facing field) — the module docstring documents this contract.
+
+## Tests (categorizer tests monkeypatch `_get_tags`/`_generate`; never hit a real server —
+follow the existing patterns in tests/test_upload.py / any test that exercises
+_categorize_pending)
+1. Row pending at cycle start, then user-modified (set model_confidence=10,
+   user_modified_category=True via a second session) before write-back → after the
+   cycle, the row keeps the user's values.
+2. Untouched pending rows in the same batch still get the model's result.
+3. Regression: a normal cycle with no interleaving behaves exactly as before.
+
+## Done
+All tests green including the full suite. Summarize the fix and list new tests.
+
+Prompt 2 — automatic pushes must respect foreign locks
+
+Fix a multi-machine data-loss vector in the NAS sync of the Faresight expense tracker
+(FastAPI + SQLite, repo root = working dir).
+
+## Project rules (non-negotiable)
+- NEVER read, reference, or act on `prompt-list.txt`.
+- Python 3.14: use `Optional[T]`, never `T | None`.
+- Tests required for every change; `.venv/bin/pytest tests/test_sync.py -v` while
+  working, `.venv/bin/pytest tests/ -v` (~6s) at the end. 265 tests green now.
+- Do NOT weaken `tests/conftest.py` isolation (FARESIGHT_DB, `isolated_nas`).
+
+## Background — app/sync.py
+`sync_to_nas()` pushes the local DB to the NAS. Callers: the periodic asyncio loop
+(`_periodic_sync_loop`), lifespan shutdown, and `POST /api/sync` (the UI's "Sync now"
+and "Proceed anyway" buttons — the latter is an explicit user override of a lock
+conflict). A JSON lock file `<NAS_SHARE_PATH>.lock` records `{hostname, timestamp}`;
+`_check_foreign_lock()` returns the foreign hostname when a fresh (age <
+SYNC_INTERVAL_MINUTES*60) foreign lock exists. Currently ONLY `sync_from_nas()`
+(startup pull) checks it; every `sync_to_nas()` blindly overwrites the NAS copy and
+the lock. Two machines running simultaneously overwrite each other's data every
+interval — last writer wins.
+Recent work you must not regress: pushes are atomic (`_push_snapshot_to_nas` writes a
+.tmp then os.replace), serialized by `_push_lock`, and the snapshot forces the NAS
+copy out of WAL mode. `_status` keys: reachable, last_action, detail, lock_warning,
+last_push, sync_enabled.
+
+## Required behavior
+Add a `force: bool = False` parameter to `sync_to_nas()`:
+- `force=False` (periodic loop, shutdown): if `_check_foreign_lock()` returns a
+  hostname, SKIP the push — log a warning, set
+  `_status["lock_warning"] = <hostname>` and `_status["last_action"] = "push_blocked_lock"`,
+  write nothing to the NAS, and return.
+- `force=True`: current behavior (push + claim lock + clear lock_warning). Wire
+  `POST /api/sync` (app/routers/sync.py) to call `sync_to_nas(force=True)` — both its
+  UI buttons are explicit user actions. Periodic loop and lifespan shutdown
+  (app/faresight.py) stay non-forced.
+The frontend already shows a red banner off `lock_warning` (common.js
+refreshNasBanner) — no frontend changes needed.
+
+## Tests (tests/test_sync.py — reuse `_patch`, `_make_sqlite_db`, `_read_sqlite_value`,
+`_write_lock_file`; the autouse `reset_status` fixture resets _status)
+1. Fresh foreign lock + sync_to_nas() → NAS file unchanged, last_action ==
+   "push_blocked_lock", lock_warning set, lock file still the foreign one.
+2. Fresh foreign lock + sync_to_nas(force=True) → push happens, lock now ours,
+   lock_warning cleared.
+3. Stale foreign lock (age > interval) + sync_to_nas() → push happens (stale locks
+   are already ignored by _check_foreign_lock).
+4. POST /api/sync via the TestClient `client` fixture → forces through a fresh
+   foreign lock (assert the push happened).
+Update any existing test that asserts unconditional pushes if its fixture now
+includes a fresh foreign lock (check `test_sync_to_nas_clears_lock_warning` — it sets
+lock_warning in _status only, decide whether it needs force or a stale lock).
+
+## Done
+Full suite green. Summarize behavior changes and new tests.
+
+
 
 
 
@@ -98,7 +202,6 @@ Add new CC in the table
 
 Separate out Fees, Transfers and cc payments and interest paid?
 
-claude --resume 40b7d229-3bc6-474a-bf34-5512fe32cad1
 
 
 
@@ -122,3 +225,6 @@ What works best in practice (this is the pattern Mint/YNAB/Monarch converged on)
 3. Balances: always separate. Bank balance is an asset, card balance is a liability — summing them is meaningless except as a net-worth line. The accounts page is the right home for that.
 
 So: keep the tabbed table (maybe add "All"), and the real design work is transfer detection/exclusion in the summaries — that's the thing standing between you and a truthful combined spending vment that if you want.
+
+
+make the tables simple do not make them accented or hoverable

@@ -25,6 +25,7 @@ import time
 from typing import TYPE_CHECKING, Optional
 
 import httpx
+from sqlalchemy import update
 
 from app.config import CATEGORIZATION_POLL_INTERVAL_S, OLLAMA_HOST, OLLAMA_MODEL
 
@@ -351,15 +352,32 @@ def _categorize_pending(db) -> int:
             _mark_batch_fallback(index)
             processed, fell_back, retried = len(index), len(index), False
 
+        skipped = 0
         for row, tx in zip(batch_rows, txs):
-            row.model_category = tx.model_category
-            row.model_confidence = tx.model_confidence
+            result = db.execute(
+                update(Transaction)
+                .where(
+                    Transaction.id == row.id,
+                    Transaction.model_confidence == PENDING_CONFIDENCE,
+                    Transaction.user_modified_category == False,
+                )
+                .values(
+                    model_category=tx.model_category,
+                    model_confidence=tx.model_confidence,
+                )
+            )
+            if result.rowcount == 0:
+                skipped += 1
+                logger.info(
+                    "Categorizer: skipped row %d — user-modified or no longer pending",
+                    row.id,
+                )
 
         db.commit()
-        total_processed += len(batch_rows)
+        total_processed += len(batch_rows) - skipped
         logger.info(
-            "Batch %d: processed=%d fell_back_to_%s=%d retried=%s (committed)",
-            batch_no, processed, FALLBACK_CATEGORY, fell_back, retried,
+            "Batch %d: processed=%d fell_back_to_%s=%d retried=%s skipped=%d (committed)",
+            batch_no, processed, FALLBACK_CATEGORY, fell_back, retried, skipped,
         )
 
     logger.info(

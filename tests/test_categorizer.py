@@ -275,6 +275,93 @@ def test_categorize_pending_commits_each_batch_independently(monkeypatch):
         db.close()
 
 
+def test_categorize_pending_user_modified_row_is_skipped(monkeypatch):
+    """Row queried as pending but user-modified during Ollama inference is not overwritten."""
+    monkeypatch.setattr(cz, "ensure_ollama_running", lambda: None)
+
+    db = TestingSession()
+    try:
+        row = _make_row(db)
+
+        def interleave_user_edit(prompt):
+            # Simulate user patching the row while Ollama is processing
+            db.query(Transaction).filter(Transaction.id == row.id).update({
+                "model_confidence": 10,
+                "model_category": "Income",
+                "user_modified_category": True,
+            })
+            return _good_generate(prompt)
+
+        monkeypatch.setattr(cz, "_generate", interleave_user_edit)
+
+        count = cz._categorize_pending(db)
+
+        assert count == 0  # skipped rows are not counted as processed
+        db.refresh(row)
+        assert row.model_confidence == 10
+        assert row.model_category == "Income"
+        assert row.user_modified_category is True
+    finally:
+        db.close()
+
+
+def test_categorize_pending_unmodified_row_in_same_batch_gets_model_result(monkeypatch):
+    """In a mixed batch, modified row is skipped and unmodified row gets the model's result."""
+    monkeypatch.setattr(cz, "ensure_ollama_running", lambda: None)
+
+    db = TestingSession()
+    try:
+        user_row = _make_row(db, description="User edited")
+        model_row = _make_row(db, description="Untouched")
+
+        def interleave_user_edit(prompt):
+            db.query(Transaction).filter(Transaction.id == user_row.id).update({
+                "model_confidence": 10,
+                "model_category": "Income",
+                "user_modified_category": True,
+            })
+            return _good_generate(prompt)
+
+        monkeypatch.setattr(cz, "_generate", interleave_user_edit)
+
+        count = cz._categorize_pending(db)
+
+        assert count == 1  # only model_row was written back
+
+        db.refresh(user_row)
+        assert user_row.model_confidence == 10
+        assert user_row.model_category == "Income"
+        assert user_row.user_modified_category is True
+
+        db.refresh(model_row)
+        assert model_row.model_category == "Shopping"
+        assert model_row.model_confidence == 6
+        assert model_row.user_modified_category is False
+    finally:
+        db.close()
+
+
+def test_categorize_pending_normal_cycle_no_interleaving_regression(monkeypatch):
+    """Regression: without interleaving all pending rows are categorized and counted."""
+    monkeypatch.setattr(cz, "ensure_ollama_running", lambda: None)
+    monkeypatch.setattr(cz, "_generate", _good_generate)
+
+    db = TestingSession()
+    try:
+        row1 = _make_row(db, description="tx1")
+        row2 = _make_row(db, description="tx2")
+
+        count = cz._categorize_pending(db)
+
+        assert count == 2
+        for row in (row1, row2):
+            db.refresh(row)
+            assert row.model_category == "Shopping"
+            assert row.model_confidence == 6
+    finally:
+        db.close()
+
+
 def test_categorize_pending_checks_ollama_per_batch(monkeypatch):
     """ensure_ollama_running is called once per batch, not once per cycle."""
     calls = {"n": 0}
