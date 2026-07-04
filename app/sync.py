@@ -128,6 +128,11 @@ def _snapshot_local_db(dest: Path) -> None:
     Uses sqlite3.Connection.backup() so un-checkpointed WAL writes are captured
     without modifying the source file. Safe to call while the app holds open
     connections to the source DB.
+
+    The destination is forced out of WAL mode afterwards: the backup copies the
+    source's WAL header flag, but the NAS copy must be one self-contained file —
+    pulls use a plain copyfile and would silently drop an un-checkpointed -wal
+    sidecar, and WAL locking is unreliable on network filesystems anyway.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     src = sqlite3.connect(str(LOCAL_DB_PATH))
@@ -135,6 +140,12 @@ def _snapshot_local_db(dest: Path) -> None:
         dst = sqlite3.connect(str(dest))
         try:
             src.backup(dst)
+            mode = dst.execute("PRAGMA journal_mode=DELETE").fetchone()[0]
+            if mode != "delete":
+                logger.warning(
+                    "NAS sync: snapshot at %s is still journal_mode=%s — "
+                    "its -wal sidecar would be lost on pull", dest, mode,
+                )
         finally:
             dst.close()
     finally:
@@ -206,6 +217,10 @@ def sync_from_nas() -> None:
 
         LOCAL_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(str(nas_path), str(LOCAL_DB_PATH))
+        # The pulled file is self-contained; stale sidecars from a previous
+        # local run would otherwise be replayed on top of it and corrupt it.
+        Path(str(LOCAL_DB_PATH) + "-wal").unlink(missing_ok=True)
+        Path(str(LOCAL_DB_PATH) + "-shm").unlink(missing_ok=True)
         _write_marker(nas_mtime)
         ts = datetime.fromtimestamp(nas_mtime).isoformat(timespec="seconds")
         logger.info("NAS sync: pulled update from NAS (NAS last modified %s)", ts)

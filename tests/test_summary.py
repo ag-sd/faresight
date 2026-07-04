@@ -216,3 +216,81 @@ def test_by_category_for_period_filters_by_bank(client):
     data = {r["category"]: r["total"]
             for r in client.get("/api/summary/by-category-for-period?year=2026&account_type=bank").json()}
     assert data.get("Groceries") == -60.00
+
+
+# ── transfer/payment exclusion from spending aggregates ──────────────────────
+
+def _make_double_count_scenario(client):
+    """The canonical double-count: a CC bill payment appears on both sides.
+
+    CC:       Groceries -100, payment credit +500 (Payments)
+    Checking: payment debit -500 (Payments), Income +2000
+    True combined total for the month: -100 + 2000 = 1900.
+    """
+    cc_id  = _make_account(client, "credit_card", "1111")
+    chk_id = _make_account(client, "checking",    "2222")
+    make_tx(client, date="2026-01-05", amount=-100.00, account_id=cc_id,
+            model_category="Groceries", model_confidence=8)
+    make_tx(client, date="2026-01-10", amount=500.00, account_id=cc_id,
+            model_category="Payments", model_confidence=10)
+    make_tx(client, date="2026-01-10", amount=-500.00, account_id=chk_id,
+            model_category="Payments", model_confidence=10)
+    make_tx(client, date="2026-01-15", amount=2000.00, account_id=chk_id,
+            model_category="Income", model_confidence=9)
+
+
+def test_by_month_excludes_transfers_combined(client):
+    _make_double_count_scenario(client)
+    for qs in ("", "?account_type=all"):
+        rows = client.get(f"/api/summary/by-month{qs}").json()
+        assert len(rows) == 1
+        assert rows[0]["total"] == 1900.00
+
+
+def test_by_month_excludes_transfers_per_type(client):
+    _make_double_count_scenario(client)
+    cc = client.get("/api/summary/by-month?account_type=credit_card").json()
+    assert len(cc) == 1
+    assert cc[0]["total"] == -100.00
+    bank = client.get("/api/summary/by-month?account_type=bank").json()
+    assert len(bank) == 1
+    assert bank[0]["total"] == 2000.00
+
+
+def test_by_month_keeps_null_model_category(client):
+    # NULL-safety: pending/uncategorized rows must not vanish from summaries.
+    make_tx(client, date="2026-03-01", amount=-25.00,
+            model_category=None, model_confidence=-1)
+    rows = client.get("/api/summary/by-month").json()
+    assert len(rows) == 1
+    assert rows[0]["total"] == -25.00
+
+
+def test_by_month_includes_unlinked(client):
+    make_tx(client, date="2026-04-01", amount=-10.00)
+    assert client.get("/api/summary/by-month?account_type=all").json()[0]["total"] == -10.00
+    assert client.get("/api/summary/by-month?account_type=credit_card").json() == []
+    assert client.get("/api/summary/by-month?account_type=bank").json() == []
+
+
+def test_by_category_for_period_excludes_transfers(client):
+    make_tx(client, date="2026-05-01", amount=-80.00,
+            model_category="Groceries", model_confidence=9)
+    make_tx(client, date="2026-05-02", amount=-500.00,
+            model_category="Payments", model_confidence=10)
+    make_tx(client, date="2026-05-03", amount=-12.00,
+            model_category="Transfers & Fees", model_confidence=10)
+
+    for qs in ("", "&account_type=all"):
+        data = {r["category"]: r["total"]
+                for r in client.get(f"/api/summary/by-category-for-period?year=2026{qs}").json()}
+        assert data == {"Groceries": -80.00}
+
+
+def test_by_category_excludes_rows_with_transfer_model_category(client):
+    make_tx(client, amount=-50.00, category="Food")
+    make_tx(client, amount=500.00, category="Payment/Credit",
+            model_category="Payments", model_confidence=10)
+
+    data = {r["category"]: r["total"] for r in client.get("/api/summary/by-category").json()}
+    assert data == {"Food": -50.00}

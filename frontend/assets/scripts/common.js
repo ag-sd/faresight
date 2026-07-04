@@ -10,6 +10,48 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ── Category colour palette ───────────────────────────────────────────────────
+const CATEGORY_COLORS = {
+  'Groceries':                     '#30d158',
+  'Dining & Takeout':              '#ff9f0a',
+  'Transportation':                '#0071e3',
+  'Housing & Utilities':           '#636366',
+  'Shopping':                      '#bf5af2',
+  'Health & Personal Care':        '#ff375f',
+  'Entertainment & Subscriptions': '#5e5ce6',
+  'Travel':                        '#64d2ff',
+  'Income':                        '#34c759',
+  'Payments':                      '#32ade6',
+  'Transfers & Fees':              '#8e8e93',
+  'Other':                         '#aeaeb2',
+};
+
+function categoryColor(cat) {
+  return CATEGORY_COLORS[cat] ?? '#6c757d';
+}
+
+// ── Shared Tabulator formatters ───────────────────────────────────────────────
+function modelCategoryFormatter(cell) {
+  const { model_category, model_confidence } = cell.getRow().getData();
+  if (model_confidence === -1) {
+    return '<span class="text-secondary fst-italic small">Pending</span>';
+  }
+  if (!model_category) return `<span class="badge rounded-pill" style="background-color:${categoryColor('Other')}">Uncategorized</span>`;
+  const color = categoryColor(model_category);
+  const pill = `<span class="badge rounded-pill" style="background-color:${color}">${esc(model_category)}</span>`;
+  const conf = model_confidence != null
+    ? `<small class="text-secondary ms-1" style="font-size:0.72em">${model_confidence}/10</small>`
+    : '';
+  return pill + conf;
+}
+
+function amountFormatter(cell) {
+  const val = parseFloat(cell.getValue());
+  const neg = val < 0;
+  cell.getElement().style.color = neg ? 'var(--bs-danger)' : 'var(--bs-success)';
+  return (neg ? '-' : '+') + '$' + Math.abs(val).toFixed(2);
+}
+
 // ── NAS banners ───────────────────────────────────────────────────────────────
 const NAS_BASE = 'alert d-flex align-items-center mb-0 rounded-0 border-0 border-bottom px-4 py-2 small fw-medium';
 

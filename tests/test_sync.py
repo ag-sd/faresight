@@ -144,6 +144,25 @@ def test_pulls_when_nas_is_newer_than_marker(monkeypatch, tmp_path):
     assert sync_mod._status["last_action"] == "pulled_update"
 
 
+def test_pull_removes_stale_local_wal_sidecars(monkeypatch, tmp_path):
+    """A leftover local -wal from a previous run must not be replayed on top
+    of the freshly pulled DB — that would corrupt it."""
+    nas_db = tmp_path / "nas" / "expenses.db"
+    _make_sqlite_db(nas_db, "from-nas")
+    local_db = tmp_path / "local.db"
+    _make_sqlite_db(local_db, "old-local")
+    Path(str(local_db) + "-wal").write_bytes(b"stale wal garbage")
+    Path(str(local_db) + "-shm").write_bytes(b"stale shm garbage")
+    _patch(monkeypatch, nas_db, local_db)
+
+    sync_from_nas()
+
+    assert sync_mod._status["last_action"] == "pulled_update"
+    assert not Path(str(local_db) + "-wal").exists()
+    assert not Path(str(local_db) + "-shm").exists()
+    assert _read_sqlite_value(local_db) == "from-nas"
+
+
 def test_pull_creates_backup_of_existing_local(monkeypatch, tmp_path):
     nas_dir = tmp_path / "nas"
     nas_dir.mkdir()
@@ -360,6 +379,34 @@ def test_sync_to_nas_pushes_local_to_nas(monkeypatch, tmp_path):
 
     assert _read_sqlite_value(nas_db) == "latest-local"
     assert sync_mod._status["last_action"] == "pushed_update"
+
+
+def test_push_snapshot_is_self_contained_despite_wal_source(monkeypatch, tmp_path):
+    """Un-checkpointed WAL writes must land in the NAS .db file itself —
+    pulls copy only that file, so a -wal sidecar on the NAS is silent data loss."""
+    nas_dir = tmp_path / "nas"
+    nas_dir.mkdir()
+    nas_db = nas_dir / "expenses.db"
+    local_db = tmp_path / "local.db"
+
+    # WAL-mode local DB with a commit that stays in the -wal file: the open
+    # connection prevents the close-time checkpoint.
+    conn = _sqlite3.connect(str(local_db))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("CREATE TABLE data (v TEXT)")
+    conn.execute("INSERT INTO data VALUES ('wal-only-row')")
+    conn.commit()
+    assert Path(str(local_db) + "-wal").stat().st_size > 0
+
+    _patch(monkeypatch, nas_db, local_db)
+    sync_to_nas()
+    conn.close()
+
+    assert _read_sqlite_value(nas_db) == "wal-only-row"
+    assert not Path(str(nas_db) + "-wal").exists()
+    check = _sqlite3.connect(str(nas_db))
+    assert check.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+    check.close()
 
 
 def test_sync_to_nas_writes_marker(monkeypatch, tmp_path):

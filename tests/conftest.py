@@ -1,3 +1,14 @@
+import os
+import tempfile
+
+# Repoint the app engine/migrations/sync at a throwaway file BEFORE any app
+# module is imported — app.config reads FARESIGHT_DB at import time. Without
+# this, the per-test lifespan runs create_all/migrate_db against the user's
+# real local DB and pushes it to the real NAS share on every teardown.
+os.environ["FARESIGHT_DB"] = os.path.join(
+    tempfile.mkdtemp(prefix="faresight-tests-"), "local.db"
+)
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -29,6 +40,15 @@ class _FakeProc:
 def no_categorizer_subprocess(monkeypatch):
     """Prevent the lifespan from spawning a real categorizer process during tests."""
     monkeypatch.setattr("app.faresight._spawn_categorizer", lambda: _FakeProc())
+
+
+@pytest.fixture(autouse=True)
+def isolated_nas(monkeypatch, tmp_path):
+    """Point NAS sync at a nonexistent tmp dir so the lifespan's startup pull
+    and shutdown push are instant offline no-ops (they were hitting the real
+    NAS mount, costing seconds per test). test_sync.py overrides this with its
+    own paths when exercising real sync logic."""
+    monkeypatch.setattr("app.sync.NAS_SHARE_PATH", str(tmp_path / "nas" / "faresight.db"))
 
 
 @pytest.fixture(autouse=True)

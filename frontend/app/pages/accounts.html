@@ -44,76 +44,56 @@
 
 <main class="container-lg my-4 px-3">
 
-  <!-- Summary widget + Add button -->
-  <div class="card shadow-sm mb-4">
-    <div class="card-body">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2 class="h6 text-uppercase text-muted fw-semibold mb-0">Account Summary</h2>
-        <div class="dropdown">
+  <!-- Accounts & Transfers (single-panel accordion) -->
+  <div class="accordion shadow-sm mb-4" id="acctAccordion">
+    <div class="accordion-item">
+      <div class="accordion-header d-flex align-items-center pe-3">
+        <h2 class="h6 mb-0 flex-grow-1">
+          <button class="accordion-button collapsed py-3 text-uppercase text-muted fw-semibold" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#collapseAcctCard"
+                  aria-expanded="false" aria-controls="collapseAcctCard">
+            Accounts &amp; Transfers
+          </button>
+        </h2>
+        <div class="dropdown ms-3">
           <button class="btn btn-primary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
             Add Account
           </button>
           <ul class="dropdown-menu dropdown-menu-end">
             <li><button class="dropdown-item" onclick="openAddAccount('checking')">Checking Account</button></li>
             <li><button class="dropdown-item" onclick="openAddAccount('savings')">Savings Account</button></li>
-            <li><button class="dropdown-item" onclick="openAddAccount('credit_card')">Credit Card</button></li>
           </ul>
         </div>
       </div>
-      <div class="row g-3">
-        <div class="col-6 col-lg-3">
-          <div class="border rounded p-3 text-center">
-            <div class="fs-3 fw-bold" id="statTotal">—</div>
-            <div class="text-muted small">Total Accounts</div>
+      <div id="collapseAcctCard" class="accordion-collapse collapse" data-bs-parent="#acctAccordion">
+        <ul class="nav nav-underline px-3 pt-2" id="accountsTabNav" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-accounts" data-bs-toggle="tab" data-bs-target="#pane-accounts"
+                    type="button" role="tab" aria-controls="pane-accounts" aria-selected="true">Accounts</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-transfers" data-bs-toggle="tab" data-bs-target="#pane-transfers"
+                    type="button" role="tab" aria-controls="pane-transfers" aria-selected="false">Transfers</button>
+          </li>
+        </ul>
+        <div class="tab-content">
+          <div class="tab-pane fade show active" id="pane-accounts" role="tabpanel" aria-labelledby="tab-accounts">
+            <div id="accountsTable"></div>
           </div>
-        </div>
-        <div class="col-6 col-lg-3">
-          <div class="border rounded p-3 text-center">
-            <div class="fs-3 fw-bold text-success" id="statActive">—</div>
-            <div class="text-muted small">Active</div>
-          </div>
-        </div>
-        <div class="col-6 col-lg-3">
-          <div class="border rounded p-3 text-center">
-            <div class="fs-3 fw-bold text-primary" id="statCC">—</div>
-            <div class="text-muted small">Credit Cards</div>
-          </div>
-        </div>
-        <div class="col-6 col-lg-3">
-          <div class="border rounded p-3 text-center">
-            <div class="fs-3 fw-bold text-info" id="statBank">—</div>
-            <div class="text-muted small">Checking / Savings</div>
+          <div class="tab-pane fade" id="pane-transfers" role="tabpanel" aria-labelledby="tab-transfers">
+            <div id="transfersTable"></div>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Tab nav -->
-  <ul class="nav nav-tabs mb-0" id="accountsTabNav" role="tablist">
-    <li class="nav-item" role="presentation">
-      <button class="nav-link active" id="tab-accounts" data-bs-toggle="tab" data-bs-target="#pane-accounts"
-              type="button" role="tab" aria-controls="pane-accounts" aria-selected="true">Accounts</button>
-    </li>
-    <li class="nav-item" role="presentation">
-      <button class="nav-link" id="tab-transfers" data-bs-toggle="tab" data-bs-target="#pane-transfers"
-              type="button" role="tab" aria-controls="pane-transfers" aria-selected="false">Transfers</button>
-    </li>
-  </ul>
-  <div class="tab-content">
-    <div class="tab-pane fade show active pt-3" id="pane-accounts" role="tabpanel" aria-labelledby="tab-accounts">
-      <div class="card shadow-sm">
-        <div id="accountsTable"></div>
-      </div>
+  <!-- Account Activity card -->
+  <div class="card shadow-sm">
+    <div class="card-header py-3">
+      <h2 class="h6 text-uppercase text-muted fw-semibold mb-0">Account Activity</h2>
     </div>
-    <div class="tab-pane fade pt-3" id="pane-transfers" role="tabpanel" aria-labelledby="tab-transfers">
-      <div class="card shadow-sm">
-        <div class="card-header py-3">
-          <h2 class="h6 text-uppercase text-muted fw-semibold mb-0">Transfers</h2>
-        </div>
-        <div id="transfersTable"></div>
-      </div>
-    </div>
+    <div id="activityTable"></div>
   </div>
 
 </main>
@@ -146,7 +126,6 @@
             <select id="acctType" name="account_type" class="form-select" required>
               <option value="checking">Checking</option>
               <option value="savings">Savings</option>
-              <option value="credit_card">Credit Card</option>
             </select>
           </div>
           <div class="mb-3">
@@ -213,7 +192,6 @@
             <select id="detailType" name="account_type" class="form-select" disabled>
               <option value="checking">Checking</option>
               <option value="savings">Savings</option>
-              <option value="credit_card">Credit Card</option>
             </select>
           </div>
           <div class="mb-3">

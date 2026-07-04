@@ -338,6 +338,27 @@ def test_no_account_type_filter_returns_all(client):
     assert total == 3
 
 
+def test_account_type_all_returns_everything(client):
+    cc_id  = _make_account(client, account_type="credit_card")
+    chk_id = _make_account(client, account_number="5678", account_type="checking")
+    make_tx(client, account_id=cc_id,  description="cc")
+    make_tx(client, account_id=chk_id, description="bank")
+    make_tx(client,                    description="unlinked")
+
+    total = client.get("/api/transactions?account_type=all").json()["total"]
+    assert total == 3
+
+
+def test_list_shows_transfer_rows(client):
+    cc_id = _make_account(client, account_type="credit_card")
+    make_tx(client, account_id=cc_id, description="CAPITAL ONE MOBILE PYMT",
+            amount=500.00, model_category="Payments", model_confidence=10)
+    make_tx(client, account_id=cc_id, description="groceries", amount=-40.00)
+
+    descriptions = {tx["description"] for tx in client.get("/api/transactions").json()["data"]}
+    assert descriptions == {"CAPITAL ONE MOBILE PYMT", "groceries"}
+
+
 # ── Categorizer running ───────────────────────────────────────────────────────
 
 def test_categorizer_running_when_proc_alive(client):

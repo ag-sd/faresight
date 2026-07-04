@@ -3,7 +3,7 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from sqlalchemy import case, extract, func
+from sqlalchemy import case, extract, func, or_
 from sqlalchemy.orm import Session
 
 from app.config import PAGE_SIZE
@@ -19,14 +19,33 @@ logger = logging.getLogger(__name__)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+# Subset of app.categorizer.ALLOWED_CATEGORIES — money movement, not spending.
+# TODO(planned): split "Transfers & Fees" into "Transfers" (excluded) and
+# "Fees" (real spending, counted). This tuple is the single point to update.
+TRANSFER_CATEGORIES = ("Payments", "Transfers & Fees")
+
+
 def _filter_by_account_type(q, account_type: Optional[str]):
     """Join accounts and filter by type. 'bank' matches checking + savings."""
-    if not account_type:
+    if not account_type or account_type == "all":
         return q
     q = q.join(Account, Transaction.account_id == Account.id)
     if account_type == "credit_card":
         return q.filter(Account.account_type == AccountType.credit_card)
     return q.filter(Account.account_type.in_([AccountType.checking, AccountType.savings]))
+
+
+def _exclude_transfers(q):
+    """Exclude payment/transfer rows from spending aggregates.
+
+    NULL-safe: SQL NOT IN drops NULL rows, so keep model_category IS NULL rows.
+    """
+    return q.filter(
+        or_(
+            Transaction.model_category.is_(None),
+            Transaction.model_category.notin_(TRANSFER_CATEGORIES),
+        )
+    )
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
@@ -99,6 +118,7 @@ def delete_transaction(tx_id: int, db: Session = Depends(get_db)):
 def summary_by_category(account_type: Optional[str] = None, db: Session = Depends(get_db)):
     q = db.query(Transaction.category, func.sum(Transaction.amount).label("total"))
     q = _filter_by_account_type(q, account_type)
+    q = _exclude_transfers(q)
     rows = q.group_by(Transaction.category).all()
     return [{"category": r.category, "total": round(r.total, 2)} for r in rows]
 
@@ -125,6 +145,7 @@ def summary_by_month(account_type: Optional[str] = None, db: Session = Depends(g
         func.sum(Transaction.amount).label("total"),
     )
     q = _filter_by_account_type(q, account_type)
+    q = _exclude_transfers(q)
     rows = q.group_by("year", "month").order_by("year", "month").all()
     return [
         {"year": int(r.year), "month": int(r.month), "total": round(r.total, 2)}
@@ -148,6 +169,7 @@ def summary_by_category_for_period(
         )
     )
     q = _filter_by_account_type(q, account_type)
+    q = _exclude_transfers(q)
     if month is not None:
         q = q.filter(extract("month", Transaction.date) == month)
     rows = q.group_by(Transaction.model_category).all()

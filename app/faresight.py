@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.config import TOP_CARD_PAGE_LIMIT
 from app.database import Base, engine, migrate_db
 from app.routers import accounts, sync, transactions
 import app.sync as sync_mod
@@ -51,6 +52,12 @@ app.include_router(sync.router)
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
+
+@app.get("/api/config")
+def frontend_config():
+    """Config values the frontend needs at boot."""
+    return {"top_card_page_limit": TOP_CARD_PAGE_LIMIT}
 
 
 @app.get("/", response_class=FileResponse)

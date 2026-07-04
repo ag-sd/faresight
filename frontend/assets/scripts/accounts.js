@@ -1,9 +1,10 @@
 // ── State ─────────────────────────────────────────────────────────────────────
 let _editingAccountId = null;
 let _detailsAccount = null;
-let accountsTable, transfersTable;
+let accountsTable, transfersTable, activityTable;
 let _allAccounts = [];
 let _bankLogos = {};
+let _topCardPageLimit = 5;  // overwritten from /api/config at boot
 
 const ACCOUNT_TYPE_LABELS = {
   checking: 'Checking',
@@ -17,6 +18,8 @@ function initAccountsTable() {
     data: [],
     layout: 'fitColumns',
     movableColumns: true,
+    pagination: true,
+    paginationSize: _topCardPageLimit,
     columns: [
       {
         title: '', field: 'bank', headerSort: false, width: 56, hozAlign: 'center',
@@ -42,8 +45,6 @@ function initAccountsTable() {
       {
         title: 'Balance', field: 'current_balance', hozAlign: 'right', width: 140,
         formatter: (cell) => {
-          const row = cell.getRow().getData();
-          if (row.account_type === 'credit_card') return '—';
           const val = cell.getValue();
           if (val == null) return '<span class="text-muted">—</span>';
           return '$' + parseFloat(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -108,6 +109,8 @@ function initTransfersTable() {
     data: [],
     layout: 'fitColumns',
     movableColumns: true,
+    pagination: true,
+    paginationSize: _topCardPageLimit,
     placeholder: 'No transfers configured.',
     columns: [
       { title: 'From', field: 'fromId', widthGrow: 2, formatter: accountCellFormatter },
@@ -145,16 +148,64 @@ function refreshTransfers(accounts) {
 
 // ── Accounts table ────────────────────────────────────────────────────────────
 async function refreshAccounts() {
+  // Fetch ALL accounts: transfers rows, source dropdowns, and tooltips may
+  // reference credit cards (e.g. CC autopay from checking). Only the visible
+  // accounts list is restricted to checking/savings.
   const accounts = await api('/api/accounts');
   _allAccounts = accounts;
 
-  document.getElementById('statTotal').textContent  = accounts.length;
-  document.getElementById('statActive').textContent = accounts.filter(a => a.is_active).length;
-  document.getElementById('statCC').textContent     = accounts.filter(a => a.account_type === 'credit_card').length;
-  document.getElementById('statBank').textContent   = accounts.filter(a => a.account_type === 'checking' || a.account_type === 'savings').length;
-
   refreshTransfers(accounts);
-  accountsTable.setData(accounts);
+  accountsTable.setData(accounts.filter(
+    a => a.account_type === 'checking' || a.account_type === 'savings'));
+}
+
+// ── Tabulator: account activity (checking/savings transactions) ──────────────
+function initActivityTable() {
+  activityTable = new Tabulator('#activityTable', {
+    ajaxURL: '/api/transactions',
+    ajaxParams: () => ({ account_type: 'bank' }),
+    pagination: true,
+    paginationMode: 'remote',
+    paginationSize: 25,
+    layout: 'fitColumns',
+    movableColumns: true,
+    initialSort: [{ column: 'date', dir: 'desc' }],
+    dataSendParams: { size: 'limit' },
+    ajaxResponse: (_url, _p, response) => ({
+      data: response.data,
+      last_page: Math.ceil(response.total / response.limit),
+    }),
+    columns: [
+      {
+        title: 'Date', field: 'date', sorter: 'date',
+        headerFilter: 'input', width: 120,
+      },
+      {
+        title: 'Description', field: 'description',
+        headerFilter: 'input', widthGrow: 3,
+        formatter: (cell) => esc(String(cell.getValue())),
+      },
+      {
+        title: 'AI Category', field: 'model_category', widthGrow: 2,
+        headerFilter: 'input',
+        formatter: modelCategoryFormatter,
+      },
+      {
+        title: 'Source', field: 'account_id', widthGrow: 1,
+        formatter: (cell) => {
+          const id = cell.getValue();
+          if (!id) return '—';
+          const acct = _allAccounts.find(a => a.id === id);
+          return acct ? esc(acct.name) : String(id);
+        },
+      },
+      {
+        title: 'Amount', field: 'amount', sorter: 'number',
+        headerFilter: 'input', hozAlign: 'right', cssClass: 'amount', width: 130,
+        formatter: amountFormatter,
+      },
+    ],
+  });
 }
 
 // ── Source account dropdown ───────────────────────────────────────────────────
@@ -175,7 +226,6 @@ function openAddAccount(type) {
   document.getElementById('addAccountModalTitle').textContent = {
     checking: 'Add Checking Account',
     savings: 'Add Savings Account',
-    credit_card: 'Add Credit Card',
   }[type] ?? 'Add Account';
   document.getElementById('addAccountForm').reset();
   document.getElementById('acctId').value = '';
@@ -322,11 +372,25 @@ async function submitAccountForm() {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-initAccountsTable();
-initTransfersTable();
 api('/api/accounts/bank-logos').then(m => { _bankLogos = m; });
-refreshAccounts();
+(async () => {
+  // Page limit must be known before the tables are constructed.
+  try {
+    const cfg = await api('/api/config');
+    _topCardPageLimit = cfg.top_card_page_limit ?? _topCardPageLimit;
+  } catch (_) { /* keep default */ }
+  initAccountsTable();
+  initTransfersTable();
+  // Activity table's Source column needs _allAccounts before its first render.
+  await refreshAccounts();
+  initActivityTable();
+})();
 
+// Tabulator renders 0-height inside hidden containers — redraw once visible.
 document.getElementById('tab-transfers').addEventListener('shown.bs.tab', () => {
+  transfersTable.redraw(true);
+});
+document.getElementById('collapseAcctCard').addEventListener('shown.bs.collapse', () => {
+  accountsTable.redraw(true);
   transfersTable.redraw(true);
 });

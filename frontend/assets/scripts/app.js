@@ -2,35 +2,13 @@
 let catChart, monthChart, txTable;
 let _accounts = [];
 let _byMonth = [];
-let _activeAccountType = 'credit_card';
-
-// ── Category colour palette ───────────────────────────────────────────────────
-const CATEGORY_COLORS = {
-  'Groceries':                     '#30d158',
-  'Dining & Takeout':              '#ff9f0a',
-  'Transportation':                '#0071e3',
-  'Housing & Utilities':           '#636366',
-  'Shopping':                      '#bf5af2',
-  'Health & Personal Care':        '#ff375f',
-  'Entertainment & Subscriptions': '#5e5ce6',
-  'Travel':                        '#64d2ff',
-  'Income':                        '#34c759',
-  'Payments':                      '#32ade6',
-  'Transfers & Fees':              '#8e8e93',
-  'Other':                         '#aeaeb2',
-};
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-function categoryColor(cat) {
-  return CATEGORY_COLORS[cat] ?? '#6c757d';
-}
 
 // ── Tabulator: transactions ───────────────────────────────────────────────────
 function initTxTable() {
   txTable = new Tabulator('#txTable', {
     ajaxURL: '/api/transactions',
-    ajaxParams: () => ({ account_type: _activeAccountType }),
     pagination: true,
     paginationMode: 'remote',
     paginationSize: 25,
@@ -55,19 +33,7 @@ function initTxTable() {
       {
         title: 'AI Category', field: 'model_category', widthGrow: 2,
         headerFilter: 'input',
-        formatter: (cell) => {
-          const { model_category, model_confidence } = cell.getRow().getData();
-          if (model_confidence === -1) {
-            return '<span class="text-secondary fst-italic small">Pending</span>';
-          }
-          if (!model_category) return `<span class="badge rounded-pill" style="background-color:${categoryColor('Other')}">Uncategorized</span>`;
-          const color = categoryColor(model_category);
-          const pill = `<span class="badge rounded-pill" style="background-color:${color}">${esc(model_category)}</span>`;
-          const conf = model_confidence != null
-            ? `<small class="text-secondary ms-1" style="font-size:0.72em">${model_confidence}/10</small>`
-            : '';
-          return pill + conf;
-        },
+        formatter: modelCategoryFormatter,
       },
       {
         title: 'Source', field: 'account_id', widthGrow: 1,
@@ -81,12 +47,7 @@ function initTxTable() {
       {
         title: 'Amount', field: 'amount', sorter: 'number',
         headerFilter: 'input', hozAlign: 'right', cssClass: 'amount', width: 130,
-        formatter: (cell) => {
-          const val = parseFloat(cell.getValue());
-          const neg = val < 0;
-          cell.getElement().style.color = neg ? 'var(--bs-danger)' : 'var(--bs-success)';
-          return (neg ? '-' : '+') + '$' + Math.abs(val).toFixed(2);
-        },
+        formatter: amountFormatter,
       },
       {
         title: '', headerSort: false, hozAlign: 'center', width: 48,
@@ -113,7 +74,7 @@ async function refreshCatChart() {
   const month = document.getElementById('catMonth').value;
   if (!year) return;
   const qs = month ? `?year=${year}&month=${month}` : `?year=${year}`;
-  const byCat = await api(`/api/summary/by-category-for-period${qs}&account_type=credit_card`);
+  const byCat = await api(`/api/summary/by-category-for-period${qs}`);
   if (catChart) catChart.destroy();
   catChart = new Chart(document.getElementById('catChart'), {
     type: 'pie',
@@ -150,7 +111,7 @@ function renderMonthChart() {
 }
 
 async function refreshCharts() {
-  _byMonth = await api('/api/summary/by-month?account_type=credit_card');
+  _byMonth = await api('/api/summary/by-month');
   populateYearPicker('catYear');
   populateYearPicker('monthYear');
   await Promise.all([refreshCatChart(), Promise.resolve(renderMonthChart())]);
@@ -206,13 +167,4 @@ initTxTable();
   // Default month picker to current month before first chart render
   document.getElementById('catMonth').value = String(new Date().getMonth() + 1);
   refreshAll();
-
-  document.querySelectorAll('#txTabs .nav-link').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#txTabs .nav-link').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      _activeAccountType = btn.dataset.accountType;
-      txTable.setData('/api/transactions');
-    });
-  });
 })();
