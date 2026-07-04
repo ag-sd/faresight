@@ -24,3 +24,8 @@
   box-shadow: none;
   color: inherit;
 }
+
+/* Plain table: no row hover accent, no alternating stripe */
+.tabulator-row:hover { background-color: transparent !important; }
+.tabulator-row:nth-child(even),
+.tabulator-row.tabulator-row-even { background-color: transparent !important; }
