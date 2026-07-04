@@ -25,7 +25,7 @@ case "$cmd" in
       rm -f "$PIDFILE"
     fi
     echo "Starting Faresight…"
-    "$UVICORN" app.faresight:app --reload >> "$LOGFILE" 2>&1 &
+    "$UVICORN" app.faresight:app --reload > "$LOGFILE" 2>&1 &
     echo $! > "$PIDFILE"
     echo "Started (pid $(cat "$PIDFILE")). Logs: $LOGFILE"
     ;;
