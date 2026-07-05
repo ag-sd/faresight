@@ -125,4 +125,18 @@ def migrate_db() -> None:
                 "ALTER TABLE file_imports ADD COLUMN account_id INTEGER REFERENCES accounts(id)"
             ))
 
+        if "importer" not in fi_existing:
+            conn.execute(text("ALTER TABLE file_imports ADD COLUMN importer VARCHAR(100)"))
+
+        # ── transaction_classification_rules ──────────────────────────────────
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS transaction_classification_rules (
+                id INTEGER PRIMARY KEY,
+                description VARCHAR(255) NOT NULL,
+                category VARCHAR(100) NOT NULL,
+                importer VARCHAR(100) NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
         conn.commit()

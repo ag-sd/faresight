@@ -95,6 +95,22 @@ class FileImportOut(BaseModel):
     rows_persisted: int
     loaded_at: datetime
     account_id: Optional[int] = None
+    importer: Optional[str] = None
+
+
+# ── Rules ─────────────────────────────────────────────────────────────────────
+
+class RuleCreate(BaseModel):
+    description: str
+    category: str
+    importer: str
+
+
+class RuleOut(RuleCreate):
+    id: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 # ── Pagination ────────────────────────────────────────────────────────────────

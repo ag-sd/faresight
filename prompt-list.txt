@@ -187,6 +187,16 @@ lock_warning in _status only, decide whether it needs force or a stale lock).
 ## Done
 Full suite green. Summarize behavior changes and new tests.
 
+AI classifier enhancements
+In pending AI categorization, show a list of transactions pending categorization so that the user may edit them as well.
+Add a rules list to the AI classifier
+
+
+There is a lot of commonality in the importers logic. Lets make them an ABC that does the standard tasks and the importers override to their custom spec.
+The ABC can take care of preclassifying etc.
+
+
+If you want a native, app-like experience without making your users use the terminal to launch a Python script, you should wrap your FastAPI + Jinja2 app into a standalone desktop executable.Tools like PyInstaller or Briefcase can package Python, Uvicorn, FastAPI, and your Jinja2 templates into a single .exe or .app file. When the user double-clicks it, it launches the FastAPI server in the background and opens their default browser to http://127.0.0.1:8000 automatically.
 
 
 
@@ -200,7 +210,6 @@ account summary widget at the top.
 Create a new page called Expenses. Add CC activity to Expenses page. Add a CC table above it. Make the CC table collapsible. Add Button to
 Add new CC in the table
 
-Separate out Fees, Transfers and cc payments and interest paid?
 
 
 
@@ -227,4 +236,47 @@ What works best in practice (this is the pattern Mint/YNAB/Monarch converged on)
 So: keep the tabbed table (maybe add "All"), and the real design work is transfer detection/exclusion in the summaries — that's the thing standing between you and a truthful combined spending vment that if you want.
 
 
-make the tables simple do not make them accented or hoverable
+
+
+
+/// PACKAGING PROMPT FOR LATER
+
+You are an expert Python software architect specializing in desktop application packaging and system design.
+
+I have an existing backend-heavy web application built using **FastAPI** and **Jinja2 server-side templates**. I need you to write the definitive integration and packaging code to convert this web app into a self-contained desktop application using **pywebview**, removing any reliance on external native browsers (like Chrome or Firefox) so it looks and feels exactly like an Electron app.
+
+---
+
+### 🛠️ Core Technical Requirements
+
+1. **Dual-Thread Architecture:**
+   - The main execution thread must be assigned to `pywebview.start()` to safely manage the native OS GUI loop.
+   - The FastAPI application (via `uvicorn`) must run in a background worker thread (e.g., using `threading.Thread(daemon=True)`).
+   - Implement a safe startup delay or port-readiness check to guarantee FastAPI is fully listening before `pywebview.create_window` attempts to load the local URL.
+
+2. **Jinja2 & Static Asset Path Resolution:**
+   - The app must handle files gracefully when "frozen" into a standalone binary using PyInstaller on a Linux environment.
+   - Use a robust resource-path wrapper function using `sys._MEIPASS` and `os.path.abspath` to dynamically route the paths for your templates directory (`Jinja2Templates(directory=...)`) and static file paths.
+
+3. **Window Properties & Lifecycle:**
+   - Configure a clean window configuration: Width: 1200px, Height: 800px, resizable, with a custom window title.
+   - Graceful Shutdown: Ensure that when the user exits or closes the native pywebview GUI window, the background FastAPI thread receives a teardown signal, closes all open ports, and shuts down cleanly without leaving orphaned Python processes running on the machine.
+
+4. **PyInstaller Compilation Blueprint:**
+   - Provide the complete, production-ready `pyinstaller` terminal CLI command optimized for a Linux environment.
+   - Explicitly include all critical hidden imports required for `uvicorn` logging, as well as the native Linux window wrappers (`webview.platforms.gtk` or `webview.platforms.qt`).
+   - Use correct Linux-native syntax (`:`) inside the `--add-data` flags for copying folders.
+
+---
+
+### 🎯 Success Criteria
+
+Your output will be considered successful only if it satisfies all of the following conditions:
+* **Zero Boilerplate Handling:** It includes a fully functioning code block pasting a mock FastAPI app with a Jinja2 template setup alongside the pywebview orchestration code.
+* **No Thread Collisions:** Uvicorn and pywebview do not fight for the main loop, preventing freeze-locks or system crashes on startup.
+* **Portable File Structures:** The code uses strictly dynamic absolute paths, allowing the final output folder or binary to run smoothly regardless of what directory it is executed from on the target machine.
+* **No Terminal Clues:** The window opens with an isolated window canvas containing zero visible browser address bars, native tabs, or chrome menus.
+
+Please provide the unified `main.py` code structure and the accompanying compilation guide.
+
+

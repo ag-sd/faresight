@@ -5,6 +5,7 @@ let accountsTable, transfersTable, activityTable;
 let _allAccounts = [];
 let _bankLogos = {};
 let _topCardPageLimit = 5;  // overwritten from /api/config at boot
+let _editTxId = null;
 
 const ACCOUNT_TYPE_LABELS = {
   checking: 'Checking',
@@ -204,8 +205,42 @@ function initActivityTable() {
         headerFilter: 'input', hozAlign: 'right', cssClass: 'amount', width: 130,
         formatter: amountFormatter,
       },
+      {
+        title: '', headerSort: false, hozAlign: 'center', width: 48,
+        formatter: () => '<button class="btn btn-link btn-sm p-0 text-secondary"><i class="fa-regular fa-pen-to-square"></i></button>',
+        cellClick: (_e, cell) => openEditModal(cell.getRow().getData()),
+      },
     ],
   });
+}
+
+// ── Edit category modal ───────────────────────────────────────────────────────
+function openEditModal(tx) {
+  _editTxId = tx.id;
+  document.getElementById('editTxDate').textContent = tx.date;
+  document.getElementById('editTxDescription').textContent = tx.description;
+  const amount = parseFloat(tx.amount);
+  const neg = amount < 0;
+  const el = document.getElementById('editTxAmount');
+  el.textContent = (neg ? '-' : '+') + '$' + Math.abs(amount).toFixed(2);
+  el.className = neg ? 'text-danger' : 'text-success';
+  const sel = document.getElementById('editCategorySelect');
+  sel.innerHTML = Object.keys(CATEGORY_COLORS).sort()
+    .map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  sel.value = (tx.model_category && tx.model_category in CATEGORY_COLORS)
+    ? tx.model_category : 'Other';
+  new bootstrap.Modal(document.getElementById('editCategoryModal')).show();
+}
+
+async function saveCategory() {
+  const category = document.getElementById('editCategorySelect').value;
+  await api(`/api/transactions/${_editTxId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model_category: category, model_confidence: 10, user_modified_category: true }),
+  });
+  bootstrap.Modal.getInstance(document.getElementById('editCategoryModal')).hide();
+  await activityTable.replaceData();
 }
 
 // ── Source account dropdown ───────────────────────────────────────────────────
@@ -261,6 +296,15 @@ function openDetailsAccount(account) {
 
   document.getElementById('detailSourceAmount').value = account.source_amount ?? '';
   document.getElementById('detailSourceFreq').value = account.source_frequency ?? '';
+
+  // Badge: show ACTIVE pill when a source transfer is configured
+  document.getElementById('detailSourceBadge').classList.toggle('d-none', !account.source_account_id);
+  // Accordion: always reset to collapsed on each open
+  const _srcCollapse = document.getElementById('collapseDetailSource');
+  _srcCollapse.classList.remove('show');
+  const _srcBtn = document.querySelector('[data-bs-target="#collapseDetailSource"]');
+  _srcBtn.classList.add('collapsed');
+  _srcBtn.setAttribute('aria-expanded', 'false');
 
   _setDetailsFormDisabled(true);
   document.getElementById('detailsFooter').classList.remove('d-none');

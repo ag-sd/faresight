@@ -113,5 +113,35 @@ async function goOffline() {
   document.getElementById('lockBanner').classList.add('d-none');
 }
 
+// ── Rules ─────────────────────────────────────────────────────────────────────
+async function openCreateRuleModal() {
+  document.getElementById('ruleDescription').value =
+    document.getElementById('editTxDescription').textContent;
+
+  const catSel = document.getElementById('ruleCategory');
+  catSel.innerHTML = Object.keys(CATEGORY_COLORS)
+    .map(c => `<option value="${esc(c)}">${esc(c)}</option>`)
+    .join('');
+  catSel.value = document.getElementById('editCategorySelect').value;
+
+  const importers = await api('/api/importers');
+  document.getElementById('ruleImporter').innerHTML =
+    importers.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join('');
+
+  new bootstrap.Modal(document.getElementById('createRuleModal')).show();
+}
+
+async function saveRule() {
+  await api('/api/rules', {
+    method: 'POST',
+    body: JSON.stringify({
+      description: document.getElementById('ruleDescription').value,
+      category:    document.getElementById('ruleCategory').value,
+      importer:    document.getElementById('ruleImporter').value,
+    }),
+  });
+  bootstrap.Modal.getInstance(document.getElementById('createRuleModal')).hide();
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 refreshNasBanner();

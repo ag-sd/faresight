@@ -198,44 +198,67 @@
             <label class="form-label fw-medium" for="detailNotes">Notes</label>
             <textarea id="detailNotes" name="notes" class="form-control" rows="2" disabled></textarea>
           </div>
-          <hr class="my-3" />
-          <p class="small fw-semibold text-uppercase text-muted mb-2">Source Account</p>
-          <div class="row g-2">
-            <div class="col-12">
-              <label class="form-label small" for="detailSourceId">Account</label>
-              <select id="detailSourceId" name="source_account_id" class="form-select" disabled>
-                <option value="">None</option>
-              </select>
-            </div>
-            <div class="col-6">
-              <label class="form-label small" for="detailSourceAmount">Amount</label>
-              <input type="number" id="detailSourceAmount" name="source_amount" class="form-control" step="0.01" min="0" disabled />
-            </div>
-            <div class="col-6">
-              <label class="form-label small" for="detailSourceFreq">Frequency</label>
-              <select id="detailSourceFreq" name="source_frequency" class="form-select" disabled>
-                <option value="">—</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-                <option value="yearly">Yearly</option>
-              </select>
+          <div class="accordion mt-3" id="detailSourceAccordion">
+            <div class="accordion-item">
+              <div class="accordion-header d-flex align-items-center pe-3">
+                <h2 class="h6 mb-0 flex-grow-1">
+                  <button class="accordion-button collapsed py-3 text-uppercase text-muted fw-semibold" type="button"
+                          data-bs-toggle="collapse" data-bs-target="#collapseDetailSource"
+                          aria-expanded="false" aria-controls="collapseDetailSource">
+                    Source Account
+                  </button>
+                </h2>
+                <span id="detailSourceBadge" class="badge rounded-pill bg-success d-none">ACTIVE</span>
+              </div>
+              <div id="collapseDetailSource" class="accordion-collapse collapse">
+                <div class="accordion-body">
+                  <div class="row g-2">
+                    <div class="col-12">
+                      <label class="form-label small" for="detailSourceId">Account</label>
+                      <select id="detailSourceId" name="source_account_id" class="form-select" disabled>
+                        <option value="">None</option>
+                      </select>
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label small" for="detailSourceAmount">Amount</label>
+                      <input type="number" id="detailSourceAmount" name="source_amount" class="form-control" step="0.01" min="0" disabled />
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label small" for="detailSourceFreq">Frequency</label>
+                      <select id="detailSourceFreq" name="source_frequency" class="form-select" disabled>
+                        <option value="">—</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="yearly">Yearly</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </form>
       </div>
       <div class="modal-footer">
-        <div id="detailsFooter" class="d-flex gap-2 justify-content-end w-100">
-          <button type="button" class="btn btn-danger btn-sm" id="detailsDeactivateBtn" onclick="deactivateFromDetails()">Deactivate</button>
-          <button type="button" class="btn btn-primary" onclick="enterEditMode()">Edit</button>
+        <div id="detailsFooter" class="d-flex justify-content-end w-100">
+          <div class="btn-group" role="group">
+            <button type="button" class="btn btn-danger" id="detailsDeactivateBtn" onclick="deactivateFromDetails()">Deactivate</button>
+            <button type="button" class="btn btn-primary" onclick="enterEditMode()">Edit</button>
+          </div>
         </div>
-        <div id="detailsEditFooter" class="d-flex gap-2 w-100 justify-content-end d-none">
-          <button type="button" class="btn btn-secondary" onclick="exitEditMode()">Discard</button>
-          <button type="button" class="btn btn-primary" onclick="saveDetailsForm()">Save</button>
+        <div id="detailsEditFooter" class="d-flex w-100 justify-content-end d-none">
+          <div class="btn-group" role="group">
+            <button type="button" class="btn btn-secondary" onclick="exitEditMode()">Discard</button>
+            <button type="button" class="btn btn-success" onclick="saveDetailsForm()">Save</button>
+          </div>
         </div>
       </div>
     </div>
   </div>
 </div>
+
+{% include "assets/templates/partials/edit_category_modal.html" %}
+{% include "assets/templates/partials/create_rule_modal.html" %}
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>

@@ -75,6 +75,17 @@ class FileImport(Base):
     rows_persisted: Mapped[int] = mapped_column(Integer, nullable=False)
     loaded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     account_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)
+    importer: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+
+class Rule(Base):
+    __tablename__ = "transaction_classification_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(100), nullable=False)
+    importer: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
 
 @dataclass

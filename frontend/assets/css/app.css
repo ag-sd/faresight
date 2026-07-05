@@ -29,3 +29,9 @@
 .tabulator-row:hover { background-color: transparent !important; }
 .tabulator-row:nth-child(even),
 .tabulator-row.tabulator-row-even { background-color: transparent !important; }
+
+/* Match pagination footer background to the enclosing card/accordion */
+.card .tabulator .tabulator-footer,
+.accordion-item .tabulator .tabulator-footer {
+  background-color: transparent;
+}

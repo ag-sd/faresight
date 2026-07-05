@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import PAGE_SIZE
 from app.database import get_db
 from app.importers import IMPORTERS
-from app.models import Account, AccountType, FileImport, Transaction
+from app.models import Account, AccountType, FileImport, Rule, Transaction
 from app.schemas import FileImportOut, PaginatedFileImports, PaginatedTransactions, TransactionCreate, TransactionCreateWithFile, TransactionOut, TransactionUpdate
 
 router = APIRouter(prefix="/api", tags=["transactions"])
@@ -245,19 +245,32 @@ async def import_bulk(
             result = import_fn(file_bytes, account)
         except (UnicodeDecodeError, csv.Error) as exc:
             logger.warning("Parse failed for %r: %s", filename, exc)
-            db.add(FileImport(filename=filename, rows_seen=0, rows_persisted=0, account_id=account_id))
+            db.add(FileImport(filename=filename, rows_seen=0, rows_persisted=0, account_id=account_id, importer=importer))
             results.append({"filename": filename, "imported": 0, "errors": [f"Could not parse file: {exc}"]})
             continue
         except Exception as exc:
             logger.error("Unexpected error importing %r: %s", filename, exc, exc_info=True)
-            db.add(FileImport(filename=filename, rows_seen=0, rows_persisted=0, account_id=account_id))
+            db.add(FileImport(filename=filename, rows_seen=0, rows_persisted=0, account_id=account_id, importer=importer))
             results.append({"filename": filename, "imported": 0, "errors": [f"Unexpected error: {exc}"]})
             continue
 
         rows_seen = len(result.transactions) + len(result.errors)
-        log = FileImport(filename=filename, rows_seen=rows_seen, rows_persisted=0, account_id=account_id)
+        log = FileImport(
+            filename=filename, rows_seen=rows_seen, rows_persisted=0,
+            account_id=account_id, importer=importer,
+        )
         db.add(log)
         db.flush()  # populate log.id before inserting transactions
+
+        # Pre-classify transactions that match a rule for this importer.
+        rule_map = {
+            r.description: r.category
+            for r in db.query(Rule).filter(Rule.importer == importer).all()
+        }
+        for tx in result.transactions:
+            if tx.description in rule_map:
+                tx.model_category = rule_map[tx.description]
+                tx.model_confidence = 10
 
         imported = 0
         for tx in result.transactions:

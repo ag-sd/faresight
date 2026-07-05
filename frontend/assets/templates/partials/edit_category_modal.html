@@ -1,0 +1,32 @@
+<!-- Edit Category Modal -->
+<div class="modal fade" id="editCategoryModal" tabindex="-1" aria-labelledby="editCategoryModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editCategoryModalLabel">Edit Category</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <dl class="row mb-3">
+          <dt class="col-sm-4">Date</dt>
+          <dd class="col-sm-8" id="editTxDate"></dd>
+          <dt class="col-sm-4">Description</dt>
+          <dd class="col-sm-8" id="editTxDescription"></dd>
+          <dt class="col-sm-4">Amount</dt>
+          <dd class="col-sm-8" id="editTxAmount"></dd>
+        </dl>
+        <label for="editCategorySelect" class="form-label fw-semibold">Category</label>
+        <div class="d-flex gap-2 align-items-center">
+          <select id="editCategorySelect" class="form-select"></select>
+          <button type="button" class="btn btn-outline-secondary flex-shrink-0" title="Create rule from this transaction" onclick="openCreateRuleModal()">
+            <i class="fa-regular fa-bookmark"></i>
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveCategory()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -213,6 +213,62 @@ function initImportTable(accountMap) {
   });
 }
 
+// ── Classification rules ──────────────────────────────────────────────────────
+
+async function loadRules() {
+  const rules = await api('/api/rules');
+  const wrap = document.getElementById('rulesTableWrap');
+
+  if (rules.length === 0) {
+    wrap.innerHTML = '<p class="text-muted small p-4 mb-0">No rules yet. Open any transaction, pick a category, then click <i class="fa-regular fa-bookmark"></i> to save it as a rule.</p>';
+    return;
+  }
+
+  const rows = rules.map(r => `
+    <tr>
+      <td class="text-truncate" style="max-width:300px" title="${esc(r.description)}">${esc(r.description)}</td>
+      <td>${esc(r.category)}</td>
+      <td>${esc(r.importer)}</td>
+      <td class="text-end">
+        <div class="btn-group btn-group-sm">
+          <button class="btn btn-outline-primary" onclick="applyRule(${r.id})">
+            <i class="fa-regular fa-play me-1"></i>Run Now
+          </button>
+          <button class="btn btn-outline-danger" onclick="deleteRule(${r.id})">
+            <i class="fa-regular fa-trash-can"></i>
+          </button>
+        </div>
+      </td>
+    </tr>`).join('');
+
+  wrap.innerHTML = `
+    <div class="table-responsive">
+      <table class="table table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Description</th>
+            <th>Category</th>
+            <th>Importer</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+async function applyRule(id) {
+  const result = await api(`/api/rules/${id}/apply`, { method: 'POST' });
+  const n = result.updated;
+  alert(`Rule applied — ${n} transaction${n !== 1 ? 's' : ''} updated.`);
+}
+
+async function deleteRule(id) {
+  if (!confirm('Delete this rule?')) return;
+  await api(`/api/rules/${id}`, { method: 'DELETE' });
+  loadRules();
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init() {
@@ -243,6 +299,7 @@ async function init() {
 }
 
 init().then(accountMap => initImportTable(accountMap));
+loadRules();
 refreshCategorizerRunning();
 setInterval(refreshCategorizerRunning, 10000);
 refreshCategorizerStatus();

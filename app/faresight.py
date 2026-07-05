@@ -5,13 +5,14 @@ from pathlib import Path
 import subprocess
 import sys
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
+import jinja2
+from fastapi.templating import Jinja2Templates
 
 from app.config import TOP_CARD_PAGE_LIMIT
 from app.database import Base, engine, migrate_db
-from app.routers import accounts, sync, transactions
+from app.routers import accounts, rules, sync, transactions
 import app.sync as sync_mod
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s: %(message)s")
@@ -48,10 +49,17 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Faresight — Expense Tracker", lifespan=lifespan)
 app.include_router(accounts.router)
 app.include_router(transactions.router)
+app.include_router(rules.router)
 app.include_router(sync.router)
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+_jinja_env = jinja2.Environment(
+    loader=jinja2.FileSystemLoader(FRONTEND_DIR),
+    autoescape=jinja2.select_autoescape(),
+    cache_size=0,
+)
+templates = Jinja2Templates(env=_jinja_env)
 
 
 @app.get("/api/config")
@@ -60,16 +68,16 @@ def frontend_config():
     return {"top_card_page_limit": TOP_CARD_PAGE_LIMIT}
 
 
-@app.get("/", response_class=FileResponse)
-def root():
-    return FileResponse(FRONTEND_DIR / "app" / "pages" / "index.html")
+@app.get("/")
+def root(request: Request):
+    return templates.TemplateResponse(request, "app/pages/index.html")
 
 
-@app.get("/accounts", response_class=FileResponse)
-def accounts_page():
-    return FileResponse(FRONTEND_DIR / "app" / "pages" / "accounts.html")
+@app.get("/accounts")
+def accounts_page(request: Request):
+    return templates.TemplateResponse(request, "app/pages/accounts.html")
 
 
-@app.get("/upload", response_class=FileResponse)
-def upload_page():
-    return FileResponse(FRONTEND_DIR / "app" / "pages" / "upload.html")
+@app.get("/upload")
+def upload_page(request: Request):
+    return templates.TemplateResponse(request, "app/pages/upload.html")
