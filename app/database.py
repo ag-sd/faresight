@@ -118,6 +118,11 @@ def migrate_db() -> None:
             "CREATE INDEX IF NOT EXISTS ix_transactions_dedup_hash ON transactions(dedup_hash)"
         ))
 
+        # Stable bank transaction ID (e.g. BofA Reference Number). Nullable; legacy
+        # rows keep their content-based dedup_hash (backfilled below) untouched.
+        if "reference_number" not in tx_existing:
+            conn.execute(text("ALTER TABLE transactions ADD COLUMN reference_number VARCHAR(64)"))
+
         # Backfill legacy rows so pre-existing history participates in dedupe.
         # Idempotent via the IS NULL filter.
         from app.models import dedup_hash_for  # deferred: models imports Base from here

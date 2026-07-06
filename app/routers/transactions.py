@@ -40,7 +40,10 @@ def _dedupe_rows(db: Session, txs) -> tuple[list, int]:
     file (two identical bus fares) all import the first time, while re-imports
     and overlapping exports contribute nothing. Returns ([(tx, hash), ...] to
     insert, skipped count)."""
-    hashes = [dedup_hash_for(tx.account_id, tx.date, tx.description, tx.amount) for tx in txs]
+    hashes = [
+        dedup_hash_for(tx.account_id, tx.date, tx.description, tx.amount, getattr(tx, "reference_number", None))
+        for tx in txs
+    ]
     existing = dict(
         db.query(Transaction.dedup_hash, func.count(Transaction.id))
         .filter(Transaction.dedup_hash.in_(set(hashes)))
@@ -113,7 +116,7 @@ def create_transaction(body: TransactionCreateWithFile, db: Session = Depends(ge
     data = body.model_dump()
     # Manual rows carry the identity hash too, so a later CSV import containing
     # a hand-entered transaction dedupes against it instead of duplicating.
-    data["dedup_hash"] = dedup_hash_for(body.account_id, body.date, body.description, body.amount)
+    data["dedup_hash"] = dedup_hash_for(body.account_id, body.date, body.description, body.amount, body.reference_number)
     tx = Transaction(**data)
     db.add(tx)
     db.commit()

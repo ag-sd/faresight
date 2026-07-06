@@ -121,6 +121,50 @@ def test_migrate_adds_file_import_columns():
         Base.metadata.drop_all(bind=engine)
 
 
+def test_migrate_adds_reference_number():
+    """reference_number lands on a legacy transactions table that predates it,
+    idempotently, and existing content-based dedup_hashes are left untouched."""
+    from app.models import dedup_hash_for
+    from datetime import date
+
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    try:
+        with engine.begin() as conn:
+            # Simulate a pre-feature DB: drop the column, seed a legacy row whose
+            # identity is content-based.
+            conn.execute(text("ALTER TABLE transactions DROP COLUMN reference_number"))
+            conn.execute(text(
+                "INSERT INTO file_imports (filename, rows_seen, rows_persisted) "
+                "VALUES ('t.csv', 1, 1)"
+            ))
+            fid = conn.execute(text("SELECT id FROM file_imports LIMIT 1")).scalar()
+            legacy_hash = dedup_hash_for(None, date(2026, 1, 15), "Legacy row", -12.5)
+            conn.execute(
+                text(
+                    "INSERT INTO transactions "
+                    "(date, description, amount, category, file_id, "
+                    " model_confidence, user_modified_category, dedup_hash) "
+                    "VALUES ('2026-01-15', 'Legacy row', -12.5, 'Food', :fid, -1, 0, :h)"
+                ),
+                {"fid": fid, "h": legacy_hash},
+            )
+
+        migrate_db()
+        migrate_db()  # idempotent — second run is a no-op
+
+        with engine.connect() as conn:
+            cols = {r[1] for r in conn.execute(text("PRAGMA table_info(transactions)"))}
+            assert "reference_number" in cols
+            row = conn.execute(text(
+                "SELECT reference_number, dedup_hash FROM transactions"
+            )).one()
+        assert row[0] is None            # legacy rows have no reference number
+        assert row[1] == legacy_hash     # content-based identity untouched
+    finally:
+        Base.metadata.drop_all(bind=engine)
+
+
 def test_migrate_creates_balance_history():
     """balance_history is created on a legacy DB that predates it, and the
     migration is idempotent (safe to run on every boot)."""

@@ -176,11 +176,15 @@ account/day/vendor/amount, e.g. two bus fares) so **no uniqueness constraint is 
   re-upload of identical bytes to the same account (prior `rows_persisted > 0`) is
   short-circuited with `duplicate_file: true` and no new `FileImport` row.
 - **Layer 2 — occurrence counting:** each row gets `Transaction.dedup_hash`
-  (`dedup_hash_for()` in `app/models.py`: SHA-256 of `account_id|date|description|amount`,
-  **non-unique** index). Per hash, only file-count − DB-count copies insert. The hash is
-  stamped at insert (imports *and* manual `POST /api/transactions`) and never recomputed on
-  edit. A previous attempt (`hash_code` + unique index) was reverted; `migrate_db()` still
-  drops that column — do not reuse the name.
+  (`dedup_hash_for()` in `app/models.py`, **non-unique** index). Per hash, only
+  file-count − DB-count copies insert. The hash is stamped at insert (imports *and* manual
+  `POST /api/transactions`) and never recomputed on edit. A previous attempt (`hash_code` +
+  unique index) was reverted; `migrate_db()` still drops that column — do not reuse the name.
+  - **Identity:** when an importer supplies a stable bank transaction ID via
+    `TransactionCreate.reference_number` (e.g. BofA's Reference Number, persisted on
+    `Transaction.reference_number`), `dedup_hash_for(..., reference=)` hashes
+    `account_id|ref|<reference>` — this survives pending→posted description/amount rewrites.
+    Otherwise it falls back to the content tuple `account_id|date|description|amount:.2f`.
 
 ## Transaction categorization (`app/categorizer.py`)
 

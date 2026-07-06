@@ -244,6 +244,7 @@ erDiagram
         int      model_confidence
         bool     user_modified_category
         string   dedup_hash
+        string   reference_number
         int      file_id               FK
         datetime created_at
     }

@@ -44,19 +44,39 @@ class Transaction(Base):
     # legitimate duplicates exist (two identical bus fares in one day) —
     # re-import idempotency uses occurrence counting, not a constraint.
     dedup_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    # Stable bank-assigned transaction ID, when the source file carries one (e.g.
+    # Bank of America's Reference Number). Feeds dedup_hash_for() so re-imports
+    # survive pending→posted description/amount rewrites. NULL for sources without one.
+    reference_number: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     file_id: Mapped[int] = mapped_column(Integer, ForeignKey("file_imports.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
 
 
-def dedup_hash_for(account_id: Optional[int], tx_date: date, description: str, amount: float) -> str:
-    """Canonical content identity of a transaction, shared by the import path,
-    manual creation, and the migration backfill. Amount is formatted to two
-    decimals so float repr noise never splits identities. Limitation: if the
-    bank rewords a description between exports (pending → posted), the row
-    re-imports as new — unavoidable without bank transaction IDs."""
-    key = f"{account_id}|{tx_date.isoformat()}|{description}|{amount:.2f}"
+def dedup_hash_for(
+    account_id: Optional[int],
+    tx_date: date,
+    description: str,
+    amount: float,
+    reference: Optional[str] = None,
+) -> str:
+    """Canonical import identity of a transaction, shared by the import path,
+    manual creation, and the migration backfill.
+
+    When the source file carries a stable bank transaction ID (``reference``),
+    the identity is that ID alone (namespaced + account-scoped) — this survives
+    the bank rewording a description or restating an amount between exports
+    (pending → posted), which the content key below cannot.
+
+    Otherwise the identity is the content tuple. Amount is formatted to two
+    decimals so float repr noise never splits identities. Limitation: without a
+    reference, a reworded description still re-imports as new.
+    """
+    if reference:
+        key = f"{account_id}|ref|{reference}"
+    else:
+        key = f"{account_id}|{tx_date.isoformat()}|{description}|{amount:.2f}"
     return hashlib.sha256(key.encode()).hexdigest()
 
 

@@ -18,6 +18,8 @@ class TransactionCreate(BaseModel):
     model_category: Optional[str] = None
     model_confidence: Optional[int] = -1
     user_modified_category: bool = False
+    # Stable bank transaction ID when the importer supplies one; drives dedupe.
+    reference_number: Optional[str] = None
 
 
 class TransactionUpdate(BaseModel):

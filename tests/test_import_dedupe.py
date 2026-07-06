@@ -14,6 +14,8 @@ from tests.conftest import TestingSession, make_tx
 SAMPLE_CSV = pathlib.Path(__file__).parent / "capitalone_sample.csv"
 CAPONE_IMPORTER = "Capital One Credit Card"
 SAVINGS_IMPORTER = "Capital One Checking/Savings"
+BOFA_IMPORTER = "Bank of America Credit Card"
+BOFA_HEADER = b"Posted Date,Reference Number,Payee,Address,Amount\n"
 
 CC_HEADER = b"Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit\n"
 # Net of the 13 sample rows: credits 139.85 + 46.27, debits 193.98 total.
@@ -263,6 +265,82 @@ def test_two_files_log_two_points_in_order(client):
     rows = _history(acct["id"])
     assert [r.as_of for r in rows] == [date(2026, 1, 1), date(2026, 2, 1)]
     assert [r.balance for r in rows] == [-5.00, -15.00]
+
+
+# ── Reference-number idempotency (BofA) ───────────────────────────────────────
+
+def _bofa_account(client):
+    r = client.post("/api/accounts", json={
+        "bank": "Bank of America", "name": "Customized Cash",
+        "account_number": "9875", "account_type": "credit_card",
+    })
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_reference_number_dedupes_across_description_rewrite(client):
+    """The key win: a pending→posted export can reword the Payee, but the stable
+    Reference Number keeps the row's identity, so nothing re-imports."""
+    acct = _bofa_account(client)
+    pending = BOFA_HEADER + b'05/18/2026,REF12345,"LEMONADE INS PENDING","",-44.83\n'
+    _import(client, acct["id"], [("may.csv", pending)], importer=BOFA_IMPORTER)
+    assert client.get("/api/transactions").json()["total"] == 1
+
+    # Same reference number, reworded payee (and a byte change so Layer 1 misses).
+    posted = BOFA_HEADER + b'05/18/2026,REF12345,"Lemonade Insurance New York NY","",-44.83\n'
+    results = _import(client, acct["id"], [("may_posted.csv", posted)], importer=BOFA_IMPORTER)
+    assert results[0]["imported"] == 0
+    assert results[0]["skipped"] == 1
+    assert client.get("/api/transactions").json()["total"] == 1
+
+
+def test_distinct_reference_numbers_both_import(client):
+    """Two rows identical in date/description/amount but with different reference
+    numbers are genuinely distinct charges — both must land."""
+    acct = _bofa_account(client)
+    rows = (
+        BOFA_HEADER
+        + b'05/01/2026,REF-A,"MTA SUBWAY","",-2.90\n'
+        + b'05/01/2026,REF-B,"MTA SUBWAY","",-2.90\n'
+    )
+    results = _import(client, acct["id"], [("may.csv", rows)], importer=BOFA_IMPORTER)
+    assert results[0]["imported"] == 2
+    assert client.get("/api/transactions").json()["total"] == 2
+
+
+def test_bofa_exact_reimport_short_circuits(client):
+    """Layer 1 (raw-bytes hash) still short-circuits an identical re-upload."""
+    acct = _bofa_account(client)
+    csv_bytes = BOFA_HEADER + b'05/18/2026,REF12345,"Lemonade","",-44.83\n'
+    _import(client, acct["id"], [("may.csv", csv_bytes)], importer=BOFA_IMPORTER)
+    results = _import(client, acct["id"], [("may.csv", csv_bytes)], importer=BOFA_IMPORTER)
+    assert results[0]["duplicate_file"] is True
+    assert client.get("/api/transactions").json()["total"] == 1
+
+
+def test_blank_reference_falls_back_to_content_hash(client):
+    """A row with no reference number dedupes on the content tuple, exactly like
+    the CapitalOne importer."""
+    acct = _bofa_account(client)
+    first = BOFA_HEADER + b'05/01/2026,,"MYSTERY CHARGE","",-9.99\n'
+    _import(client, acct["id"], [("a.csv", first)], importer=BOFA_IMPORTER)
+    # Different bytes (extra row) so Layer 1 misses; the mystery row must still dedupe.
+    extended = first + b'05/02/2026,REF-NEW,"COFFEE","",-4.00\n'
+    results = _import(client, acct["id"], [("b.csv", extended)], importer=BOFA_IMPORTER)
+    assert results[0]["imported"] == 1
+    assert results[0]["skipped"] == 1
+    assert client.get("/api/transactions").json()["total"] == 2
+
+
+def test_bofa_balance_derives_from_net_delta(client):
+    acct = _bofa_account(client)
+    rows = (
+        BOFA_HEADER
+        + b'05/01/2026,REF-A,"Groceries","",-62.50\n'
+        + b'05/02/2026,REF-B,"Payment","",44.83\n'
+    )
+    _import(client, acct["id"], [("may.csv", rows)], importer=BOFA_IMPORTER)
+    assert _balance(client, acct["id"]) == round(-62.50 + 44.83, 2)
 
 
 # ── Bookkeeping surface ───────────────────────────────────────────────────────

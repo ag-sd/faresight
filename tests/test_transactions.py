@@ -22,6 +22,8 @@ def test_create_minimal(client):
     assert tx["amount"] == -10.00
     assert tx["category"] == "Food"
     assert tx["account_id"] is None
+    # Manual entry carries no bank reference number.
+    assert tx["reference_number"] is None
     assert "created_at" in tx
 
 
