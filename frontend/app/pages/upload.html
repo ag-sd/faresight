@@ -1,4 +1,5 @@
 {% extends "app/layouts/base.html" %}
+{% from "assets/templates/partials/tabs.html" import tab_nav %}
 {% block title %}Upload{% endblock %}
 
 {% block head %}
@@ -22,81 +23,120 @@
 <main class="container-lg my-4 px-3">
 
   <div class="card shadow-sm">
-    <div class="card-body p-4">
-      <h2 class="h6 text-uppercase text-muted fw-semibold mb-4">Import Transactions</h2>
-
-      <!-- Dropzone -->
-      <div id="dropzone" class="dropzone d-flex flex-column align-items-center justify-content-center p-4 mb-3">
-        <i class="fa-regular fa-file fa-2x text-muted mb-2"></i>
-        <p class="mb-1 fw-medium">Drop CSV files here</p>
-        <p class="text-muted small mb-0">or click to browse</p>
-        <input type="file" id="fileInput" accept=".csv" multiple class="d-none" />
-      </div>
-
-      <!-- File list -->
-      <ul id="fileList" class="list-group mb-4"></ul>
-
-      <!-- Controls -->
-      <div class="row g-3 align-items-end">
-        <div class="col-12 col-sm-5">
-          <label class="form-label fw-medium" for="accountSelect">Account</label>
-          <select id="accountSelect" class="form-select" onchange="updateUploadBtn()">
-            <option value="">Select account…</option>
-          </select>
-        </div>
-        <div class="col-12 col-sm-5">
-          <label class="form-label fw-medium" for="importerSelect">File format</label>
-          <select id="importerSelect" class="form-select" onchange="updateUploadBtn()">
-            <option value="">Select importer…</option>
-          </select>
-        </div>
-        <div class="col-12 col-sm-2 d-grid">
-          <button id="uploadBtn" class="btn btn-primary" onclick="doUpload()" disabled>Upload</button>
-        </div>
-      </div>
-
+    <div class="card-header py-2">
+      <h2 class="h6 text-uppercase text-muted fw-semibold mb-2">Import Activity</h2>
+      {{ tab_nav([
+        {'id': 'tab-import', 'target': 'pane-import', 'label': 'Import', 'active': true},
+        {'id': 'tab-recent', 'target': 'pane-recent', 'label': 'Recent Uploads', 'active': false},
+      ], nav_id='importTabNav') }}
     </div>
-  </div>
+    <div class="tab-content">
 
-  <div id="categorizerTracker" class="card shadow-sm mt-3 d-none">
-    <div class="card-body p-4">
-      <h2 class="h6 text-uppercase text-muted fw-semibold mb-3">
-        <i class="fa-regular fa-lightbulb me-2"></i>AI Categorization
-      </h2>
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <span id="categorizerText" class="small fw-medium"></span>
-        <span id="categorizerCount" class="small text-muted"></span>
-      </div>
-      <div class="progress" style="height: 8px;" role="progressbar"
-           aria-label="Categorization progress">
-        <div id="categorizerBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
-             style="width: 0%"></div>
-      </div>
-    </div>
-  </div>
+      <div class="tab-pane fade show active" id="pane-import" role="tabpanel" aria-labelledby="tab-import">
+        <div class="card-body p-4">
 
-  <div class="card shadow-sm mt-3">
-    <div class="card-body py-2 px-4 d-flex align-items-center gap-2">
-      <span class="small text-muted fw-semibold text-uppercase">AI Categorizer</span>
-      <span id="categorizerStatusPill" class="badge rounded-pill bg-secondary">…</span>
+          <!-- Dropzone -->
+          <div id="dropzone" class="dropzone d-flex flex-column align-items-center justify-content-center p-4 mb-3">
+            <i class="fa-regular fa-file fa-2x text-muted mb-2"></i>
+            <p class="mb-1 fw-medium">Drop CSV files here</p>
+            <p class="text-muted small mb-0">or click to browse</p>
+            <input type="file" id="fileInput" accept=".csv" multiple class="d-none" />
+          </div>
+
+          <!-- Defaults (applied to newly added files; each file can be overridden below) -->
+          <div class="row g-3 align-items-end mb-3">
+            <div class="col-12 col-sm-6">
+              <label class="form-label fw-medium mb-1" for="accountSelect">
+                Default account <span class="text-muted fw-normal small">— applied to new files</span>
+              </label>
+              <select id="accountSelect" class="form-select">
+                <option value="">Select account…</option>
+              </select>
+            </div>
+            <div class="col-12 col-sm-6">
+              <label class="form-label fw-medium mb-1" for="importerSelect">
+                Default file format <span class="text-muted fw-normal small">— applied to new files</span>
+              </label>
+              <select id="importerSelect" class="form-select">
+                <option value="">Select importer…</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- File list (per-file account + importer) -->
+          <ul id="fileList" class="list-group mb-3"></ul>
+
+          <!-- Upload + progress -->
+          <div id="uploadProgressWrap" class="mb-3 d-none">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span id="uploadProgressText" class="small fw-medium"></span>
+            </div>
+            <div class="progress" style="height: 8px;" role="progressbar" aria-label="Upload progress">
+              <div id="uploadProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+                   style="width: 0%"></div>
+            </div>
+          </div>
+          <div class="d-grid">
+            <button id="uploadBtn" class="btn btn-primary" onclick="doUpload()" disabled>Upload</button>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="pane-recent" role="tabpanel" aria-labelledby="tab-recent">
+        <div id="importTable"></div>
+      </div>
+
     </div>
   </div>
 
   <div class="card shadow-sm mt-4">
-    <div class="card-header py-3">
-      <h2 class="h6 text-uppercase text-muted fw-semibold mb-0">Classification Rules</h2>
+    <div class="card-header pt-3 pb-2">
+      <h2 class="h6 text-uppercase text-muted fw-semibold mb-2">Classification</h2>
+      {{ tab_nav([
+        {'id': 'tab-aicat', 'target': 'pane-aicat', 'label': 'AI Categorization', 'active': true},
+        {'id': 'tab-rules', 'target': 'pane-rules', 'label': 'Classification Rules', 'active': false},
+      ], nav_id='classificationTabNav') }}
     </div>
-    <div id="rulesTableWrap">
-      <p class="text-muted small p-4 mb-0">No rules yet. Open any transaction, pick a category, then click <i class="fa-regular fa-bookmark"></i> to save it as a rule.</p>
+    <div class="tab-content">
+
+      <div class="tab-pane fade show active" id="pane-aicat" role="tabpanel" aria-labelledby="tab-aicat">
+        <div class="card-body p-4">
+
+          <!-- Categorization progress -->
+          <div id="categorizerTracker" class="mb-4 d-none">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span id="categorizerText" class="small fw-medium"></span>
+              <span id="categorizerCount" class="small text-muted"></span>
+            </div>
+            <div class="progress" style="height: 8px;" role="progressbar" aria-label="Categorization progress">
+              <div id="categorizerBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+                   style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- Categorizer subprocess status -->
+          <div class="d-flex align-items-center gap-2 mb-4">
+            <span class="small text-muted fw-semibold text-uppercase">AI Categorizer</span>
+            <span id="categorizerStatusPill" class="badge rounded-pill bg-secondary">…</span>
+          </div>
+
+          <!-- Transactions pending categorization -->
+          <h3 class="h6 text-uppercase text-muted fw-semibold mb-2">Pending categorization</h3>
+          <div id="pendingTxTable"></div>
+
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="pane-rules" role="tabpanel" aria-labelledby="tab-rules">
+        <div id="rulesTableWrap">
+          <p class="text-muted small p-4 mb-0">No rules yet. Open any transaction, pick a category, then click <i class="fa-solid fa-bookmark"></i> to save it as a rule.</p>
+        </div>
+      </div>
+
     </div>
   </div>
 
-  <div class="card shadow-sm mt-4">
-    <div class="card-header fw-semibold">Recent Uploads</div>
-    <div class="card-body p-0">
-      <div id="importTable"></div>
-    </div>
-  </div>
 
 </main>
 
@@ -121,6 +161,9 @@
     </div>
   </div>
 </div>
+
+{% include "assets/templates/partials/edit_category_modal.html" %}
+{% include "assets/templates/partials/create_rule_modal.html" %}
 {% endblock %}
 
 {% block scripts %}

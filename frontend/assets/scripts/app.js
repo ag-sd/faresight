@@ -20,41 +20,7 @@ function initTxTable() {
       data: response.data,
       last_page: Math.ceil(response.total / response.limit),
     }),
-    columns: [
-      {
-        title: 'Date', field: 'date', sorter: 'date',
-        headerFilter: 'input', width: 120,
-      },
-      {
-        title: 'Description', field: 'description',
-        headerFilter: 'input', widthGrow: 3,
-        formatter: (cell) => esc(String(cell.getValue())),
-      },
-      {
-        title: 'Category', field: 'model_category', widthGrow: 2,
-        headerFilter: 'input',
-        formatter: modelCategoryFormatter,
-      },
-      {
-        title: 'Source', field: 'account_id', widthGrow: 1,
-        formatter: (cell) => {
-          const id = cell.getValue();
-          if (!id) return '—';
-          const acct = _accounts.find(a => a.id === id);
-          return acct ? esc(acct.name) : String(id);
-        },
-      },
-      {
-        title: 'Amount', field: 'amount', sorter: 'number',
-        headerFilter: 'input', hozAlign: 'right', cssClass: 'amount', width: 130,
-        formatter: amountFormatter,
-      },
-      {
-        title: '', headerSort: false, hozAlign: 'center', width: 48,
-        formatter: () => '<button class="btn btn-link btn-sm p-0 text-secondary"><i class="fa-regular fa-pen-to-square"></i></button>',
-        cellClick: (_e, cell) => openEditModal(cell.getRow().getData()),
-      },
-    ],
+    columns: txColumns({ accounts: () => _accounts, withEdit: true }),
   });
 }
 
@@ -125,45 +91,18 @@ async function refreshTable() {
   await txTable.setPage(1);
 }
 
-let _editTxId = null;
-
-function openEditModal(tx) {
-  _editTxId = tx.id;
-  document.getElementById('editTxDate').textContent = tx.date;
-  document.getElementById('editTxDescription').textContent = tx.description;
-  const amount = parseFloat(tx.amount);
-  const neg = amount < 0;
-  const el = document.getElementById('editTxAmount');
-  el.textContent = (neg ? '-' : '+') + '$' + Math.abs(amount).toFixed(2);
-  el.className = neg ? 'text-danger' : 'text-success';
-  const sel = document.getElementById('editCategorySelect');
-  sel.innerHTML = Object.keys(CATEGORY_COLORS)
-    .sort()
-    .map(c => `<option value="${esc(c)}">${esc(c)}</option>`)
-    .join('');
-  sel.value = (tx.model_category && tx.model_category in CATEGORY_COLORS) ? tx.model_category : 'Other';
-  new bootstrap.Modal(document.getElementById('editCategoryModal')).show();
-}
-
-async function saveCategory() {
-  const category = document.getElementById('editCategorySelect').value;
-  await api(`/api/transactions/${_editTxId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model_category: category, model_confidence: 10, user_modified_category: true }),
-  });
-  bootstrap.Modal.getInstance(document.getElementById('editCategoryModal')).hide();
-  await refreshAll();
-}
+// openEditModal / saveCategory live in common.js; this page just supplies the refresh.
+afterCategorySave = refreshAll;
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 async function refreshAll() {
   await Promise.all([refreshCharts(), refreshTable()]);
 }
 
-initTxTable();
 (async () => {
   _accounts = await api('/api/accounts');
+  // initTxTable after accounts load so txColumns captures the populated list.
+  initTxTable();
   // Default month picker to current month before first chart render
   document.getElementById('catMonth').value = String(new Date().getMonth() + 1);
   refreshAll();

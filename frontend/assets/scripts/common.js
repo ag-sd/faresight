@@ -53,6 +53,83 @@ function amountFormatter(cell) {
   return (neg ? '-' : '+') + '$' + Math.abs(val).toFixed(2);
 }
 
+// ── Shared transactions-table columns ─────────────────────────────────────────
+// Column set for the dashboard / accounts activity / upload pending tables.
+// `accounts` resolves the Source cell — an array, or a getter returning one so the
+// lookup stays live if the page reassigns its accounts list. `categoryWidth` fixes
+// the Category column width (null → grows); `withEdit` appends the pen column.
+function txColumns({ accounts = [], categoryWidth = null, sourceGrow = 1, withEdit = false } = {}) {
+  const accountsOf = () => (typeof accounts === 'function' ? accounts() : accounts);
+  const category = categoryWidth == null
+    ? { title: 'Category', field: 'model_category', widthGrow: 2, headerFilter: 'input', formatter: modelCategoryFormatter }
+    : { title: 'Category', field: 'model_category', width: categoryWidth, headerFilter: 'input', formatter: modelCategoryFormatter };
+
+  const cols = [
+    { title: 'Date', field: 'date', sorter: 'date', headerFilter: 'input', width: 120 },
+    {
+      title: 'Description', field: 'description', headerFilter: 'input', widthGrow: 3,
+      formatter: (cell) => esc(String(cell.getValue())),
+    },
+    category,
+    {
+      title: 'Source', field: 'account_id', widthGrow: sourceGrow,
+      formatter: (cell) => {
+        const id = cell.getValue();
+        if (!id) return '—';
+        const acct = accountsOf().find(a => a.id === id);
+        return acct ? esc(acct.name) : String(id);
+      },
+    },
+    {
+      title: 'Amount', field: 'amount', sorter: 'number',
+      headerFilter: 'input', hozAlign: 'right', cssClass: 'amount', width: 130,
+      formatter: amountFormatter,
+    },
+  ];
+
+  if (withEdit) {
+    cols.push({
+      title: '', headerSort: false, hozAlign: 'center', width: 48,
+      formatter: () => '<button class="btn btn-link btn-sm p-0 text-secondary"><i class="fa-regular fa-pen-to-square"></i></button>',
+      cellClick: (_e, cell) => openEditModal(cell.getRow().getData()),
+    });
+  }
+  return cols;
+}
+
+// ── Shared edit-category modal ────────────────────────────────────────────────
+// Pages assign `afterCategorySave` to refresh their own views once a save lands.
+let _editTxId = null;
+let afterCategorySave = () => {};
+
+function openEditModal(tx) {
+  _editTxId = tx.id;
+  document.getElementById('editTxDate').textContent = tx.date;
+  document.getElementById('editTxDescription').textContent = tx.description;
+  const amount = parseFloat(tx.amount);
+  const neg = amount < 0;
+  const el = document.getElementById('editTxAmount');
+  el.textContent = (neg ? '-' : '+') + '$' + Math.abs(amount).toFixed(2);
+  el.className = neg ? 'text-danger' : 'text-success';
+  const sel = document.getElementById('editCategorySelect');
+  sel.innerHTML = Object.keys(CATEGORY_COLORS).sort()
+    .map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  sel.value = (tx.model_category && tx.model_category in CATEGORY_COLORS)
+    ? tx.model_category : 'Other';
+  new bootstrap.Modal(document.getElementById('editCategoryModal')).show();
+}
+
+async function saveCategory() {
+  const category = document.getElementById('editCategorySelect').value;
+  await api(`/api/transactions/${_editTxId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model_category: category, model_confidence: 10, user_modified_category: true }),
+  });
+  bootstrap.Modal.getInstance(document.getElementById('editCategoryModal')).hide();
+  await afterCategorySave();
+}
+
 // ── NAS banners ───────────────────────────────────────────────────────────────
 const NAS_BASE = 'alert d-flex align-items-center mb-0 rounded-0 border-0 border-bottom px-4 py-2 small fw-medium';
 

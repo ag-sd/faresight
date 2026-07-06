@@ -1,12 +1,26 @@
-// Map of "name:size" -> File for deduplication
+// Map of "name:size" -> { file, accountId, importerName } for deduplication.
+// accountId / importerName are the per-file account + importer choices.
 const fileSet = new Map();
+
+// Populated in init() and reused when rendering per-file selects.
+let accountsList = [];
+let importersList = [];
+let _topCardPageLimit = 5;  // overwritten from /api/config at boot
 
 // ── File list ─────────────────────────────────────────────────────────────────
 
 function fileKey(f) { return f.name + ':' + f.size; }
 
 function addFiles(fileList) {
-  for (const f of fileList) fileSet.set(fileKey(f), f);
+  // New files inherit the current default account/importer as their starting choice.
+  const defAccount = document.getElementById('accountSelect').value;
+  const defImporter = document.getElementById('importerSelect').value;
+  for (const f of fileList) {
+    const key = fileKey(f);
+    if (!fileSet.has(key)) {
+      fileSet.set(key, { file: f, accountId: defAccount, importerName: defImporter });
+    }
+  }
   renderFileList();
 }
 
@@ -15,24 +29,63 @@ function removeFile(key) {
   renderFileList();
 }
 
+// Build a <select> from options, preselecting `selected`. Each option is
+// { value, label }; a leading placeholder ('') is prepended.
+function buildSelect(options, selected, placeholder, onChange) {
+  const sel = document.createElement('select');
+  sel.className = 'form-select form-select-sm';
+  const ph = document.createElement('option');
+  ph.value = '';
+  ph.textContent = placeholder;
+  sel.appendChild(ph);
+  for (const o of options) {
+    const opt = document.createElement('option');
+    opt.value = o.value;
+    opt.textContent = o.label;
+    if (String(o.value) === String(selected)) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  sel.addEventListener('change', onChange);
+  return sel;
+}
+
 function renderFileList() {
   const ul = document.getElementById('fileList');
   ul.innerHTML = '';
-  for (const [key, file] of fileSet) {
+  for (const [key, entry] of fileSet) {
     const li = document.createElement('li');
-    li.className = 'list-group-item d-flex justify-content-between align-items-center py-2';
+    li.className = 'list-group-item py-2';
 
-    const span = document.createElement('span');
-    span.className = 'text-truncate me-2';
-    span.innerHTML = '<i class="fa-regular fa-file me-2 text-muted"></i>';
-    span.append(file.name);  // text node — browser escapes special characters automatically
+    const row = document.createElement('div');
+    row.className = 'd-flex align-items-center gap-2 flex-wrap';
+
+    const name = document.createElement('span');
+    name.className = 'text-truncate flex-grow-1 me-1';
+    name.style.minWidth = '8rem';
+    name.innerHTML = '<i class="fa-regular fa-file me-2 text-muted"></i>';
+    name.append(entry.file.name);  // text node — browser escapes special characters automatically
+
+    const acctOpts = accountsList.map(a => ({ value: a.id, label: `${a.bank} — ${a.name}` }));
+    const acctSel = buildSelect(acctOpts, entry.accountId, 'Account…', (e) => {
+      entry.accountId = e.target.value;
+      updateUploadBtn();
+    });
+    acctSel.style.maxWidth = '14rem';
+
+    const impOpts = importersList.map(n => ({ value: n, label: n }));
+    const impSel = buildSelect(impOpts, entry.importerName, 'Importer…', (e) => {
+      entry.importerName = e.target.value;
+      updateUploadBtn();
+    });
+    impSel.style.maxWidth = '14rem';
 
     const btn = document.createElement('button');
     btn.className = 'btn btn-sm btn-outline-danger py-0 px-2 flex-shrink-0';
-    btn.innerHTML = '<i class="fa-regular fa-xmark"></i>';  // static markup only
+    btn.innerHTML = '<i class="fa-solid fa-xmark"></i>';  // static markup only
     btn.addEventListener('click', () => removeFile(key));   // key closed over, never serialized into HTML
 
-    li.append(span, btn);
+    row.append(name, acctSel, impSel, btn);
+    li.append(row);
     ul.appendChild(li);
   }
   updateUploadBtn();
@@ -67,38 +120,57 @@ input.addEventListener('change', () => {
 
 function updateUploadBtn() {
   const btn = document.getElementById('uploadBtn');
-  btn.disabled = !(
-    fileSet.size > 0 &&
-    document.getElementById('accountSelect').value !== '' &&
-    document.getElementById('importerSelect').value !== ''
-  );
+  // Enabled only once every file has both an account and an importer assigned.
+  const allAssigned = [...fileSet.values()].every(e => e.accountId && e.importerName);
+  btn.disabled = !(fileSet.size > 0 && allAssigned);
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────────
 
 async function doUpload() {
   const btn = document.getElementById('uploadBtn');
+  const wrap = document.getElementById('uploadProgressWrap');
+  const bar = document.getElementById('uploadProgressBar');
+  const text = document.getElementById('uploadProgressText');
+
+  const entries = [...fileSet.values()];
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Uploading…';
+  wrap.classList.remove('d-none');
 
-  const fd = new FormData();
-  for (const file of fileSet.values()) fd.append('files', file);
-  fd.append('account_id', document.getElementById('accountSelect').value);
-  fd.append('importer', document.getElementById('importerSelect').value);
+  // One request per file, so each carries its own account + importer. Failures
+  // are recorded per-file and do not abort the batch.
+  const results = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    text.textContent = `Uploading file ${i + 1} of ${entries.length}…`;
+    bar.style.width = Math.round(i / entries.length * 100) + '%';
 
-  try {
-    const res = await fetch('/api/transactions/import-bulk', { method: 'POST', body: fd });
-    if (!res.ok) throw new Error(await res.text());
-    const results = await res.json();
-    showResultModal(results);
-    fileSet.clear();
-    renderFileList();
-  } catch (err) {
-    alert('Upload failed: ' + err.message);
-  } finally {
-    btn.innerHTML = 'Upload';
-    updateUploadBtn();
+    const fd = new FormData();
+    fd.append('files', entry.file);
+    fd.append('account_id', entry.accountId);
+    fd.append('importer', entry.importerName);
+
+    try {
+      const res = await fetch('/api/transactions/import-bulk', { method: 'POST', body: fd });
+      if (!res.ok) throw new Error(await res.text());
+      results.push(...await res.json());
+    } catch (err) {
+      results.push({ filename: entry.file.name, imported: 0, errors: ['Upload failed: ' + err.message] });
+    }
   }
+  bar.style.width = '100%';
+
+  showResultModal(results);
+  fileSet.clear();
+  renderFileList();
+  refreshImportTable();
+  refreshPendingTable();
+
+  wrap.classList.add('d-none');
+  bar.style.width = '0%';
+  btn.innerHTML = 'Upload';
+  updateUploadBtn();
 }
 
 // ── Result modal ──────────────────────────────────────────────────────────────
@@ -157,10 +229,16 @@ async function refreshCategorizerRunning() {
 
 // ── Categorization tracker ────────────────────────────────────────────────────
 
+let _lastPending = null;
+
 async function refreshCategorizerStatus() {
   const s = await api('/api/categorizer/status');
   const total = s.pending + s.categorized;
   const tracker = document.getElementById('categorizerTracker');
+
+  // Keep the pending table in step, but only reload when the count actually
+  // changed so we don't reset the user's page/scroll on every poll.
+  if (s.pending !== _lastPending) { _lastPending = s.pending; refreshPendingTable(); }
 
   if (total === 0) { tracker.classList.add('d-none'); return; }
   tracker.classList.remove('d-none');
@@ -185,8 +263,15 @@ async function refreshCategorizerStatus() {
 
 // ── Recent uploads table ──────────────────────────────────────────────────────
 
+let importTable = null;
+
+// Reload the Recent Uploads table so freshly imported files appear.
+function refreshImportTable() {
+  if (importTable) importTable.setData();
+}
+
 function initImportTable(accountMap) {
-  new Tabulator('#importTable', {
+  importTable = new Tabulator('#importTable', {
     ajaxURL: '/api/file-imports',
     pagination: true,
     paginationMode: 'remote',
@@ -213,6 +298,40 @@ function initImportTable(accountMap) {
   });
 }
 
+// ── Pending categorization table ──────────────────────────────────────────────
+
+let pendingTable = null;
+
+function refreshPendingTable() {
+  if (pendingTable) pendingTable.setData();
+}
+
+function initPendingTable() {
+  pendingTable = new Tabulator('#pendingTxTable', {
+    ajaxURL: '/api/transactions',
+    ajaxParams: () => ({ pending_only: true }),
+    pagination: true,
+    paginationMode: 'remote',
+    paginationSize: _topCardPageLimit,
+    layout: 'fitColumns',
+    movableColumns: true,
+    initialSort: [{ column: 'date', dir: 'desc' }],
+    dataSendParams: { size: 'limit' },
+    ajaxResponse: (_url, _p, response) => ({
+      data: response.data,
+      last_page: Math.ceil(response.total / response.limit),
+    }),
+    columns: txColumns({ accounts: () => accountsList, withEdit: true }),
+  });
+}
+
+// Post-save refresh for the shared edit-category modal (common.js): the saved row
+// leaves the pending set, so reload the table and update the progress bar.
+afterCategorySave = async () => {
+  refreshPendingTable();
+  await refreshCategorizerStatus();
+};
+
 // ── Classification rules ──────────────────────────────────────────────────────
 
 async function loadRules() {
@@ -220,7 +339,7 @@ async function loadRules() {
   const wrap = document.getElementById('rulesTableWrap');
 
   if (rules.length === 0) {
-    wrap.innerHTML = '<p class="text-muted small p-4 mb-0">No rules yet. Open any transaction, pick a category, then click <i class="fa-regular fa-bookmark"></i> to save it as a rule.</p>';
+    wrap.innerHTML = '<p class="text-muted small p-4 mb-0">No rules yet. Open any transaction, pick a category, then click <i class="fa-solid fa-bookmark"></i> to save it as a rule.</p>';
     return;
   }
 
@@ -277,6 +396,10 @@ async function init() {
     api('/api/importers'),
   ]);
 
+  // Cache for the per-file selects rendered in renderFileList().
+  accountsList = accounts;
+  importersList = importers;
+
   const accountMap = {};
   const acctSel = document.getElementById('accountSelect');
   accounts.forEach(a => {
@@ -298,7 +421,16 @@ async function init() {
   return accountMap;
 }
 
-init().then(accountMap => initImportTable(accountMap));
+(async () => {
+  try {
+    const cfg = await api('/api/config');
+    _topCardPageLimit = cfg.top_card_page_limit ?? _topCardPageLimit;
+  } catch (_) { /* keep default */ }
+  const accountMap = await init();
+  initImportTable(accountMap);
+  initPendingTable();  // after init() so accountsList is populated
+})();
+
 loadRules();
 refreshCategorizerRunning();
 setInterval(refreshCategorizerRunning, 10000);

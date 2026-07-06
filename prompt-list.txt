@@ -200,15 +200,42 @@ improve import UX to drop multiple files and chose a account and loader per file
 AI classifier enhancements
 In pending AI categorization, show a list of transactions pending categorization so that the user may edit them as well.
 Add a rules list to the AI classifier
-Classification rules and recent uploads to be tabbed
-Recent Uploads to be capitalized. Classification rules to be called pre-classification rules
+Classification rules  to be tabbed
 
 
-Create a new page called Expenses. Add only CC activity and accounts to Expenses page. Follow the exact design of the Accounts page
-but restrict all accounts and transactions to credit card related. Then rename the accounts page to Income and update all the endpoints and other interaction
-break these changes out into multiple phases so we can go thru them in steps
+
 
 Upgrade to FA 7
+
+Fable
+For my expense tracker app that captures bank activity and cc transaction activity, suggest what widgets / charts / views can be added to dashboard page to show
+insightful trends to give me an overview into my finances.
+- net worth badge
+- net worth over time
+- spending by month and year (bar / pie)
+- What insights do YNAB and Monarch give you
+- drop all transactions table.
+- Average interest rate
+- Average growth rate
+
+
+----
+
+Trading Accounts support
+
+----
+Reports feature (Export)
+Income offset expenses for reimbursements
+    Link an income and an expense
+    Mark an expense as unlinked
+
+Group several expenses together (Ex: Florida Travel)
+    View by group
+
+
+
+
+
 
 
 

@@ -170,3 +170,61 @@ def test_income_page_has_create_rule_modal(client):
     assert 'id="ruleCategory"' in html
     assert 'id="ruleImporter"' in html
     assert 'fa-bookmark' in html
+
+
+# ── Upload page: tabbed import card ───────────────────────────────────────────
+def test_upload_page_import_card_is_tabbed(client):
+    html = client.get("/upload").text
+    assert 'nav-underline' in html
+    for anchor in ('id="tab-import"', 'id="pane-import"',
+                   'id="tab-recent"', 'id="pane-recent"'):
+        assert anchor in html
+
+
+def test_upload_page_heading_renamed_to_import(client):
+    html = client.get("/upload").text
+    assert 'Import Transactions' not in html
+    assert '>Import</button>' in html
+
+
+def test_upload_page_recent_uploads_table_in_pane(client):
+    html = client.get("/upload").text
+    # Table moved into the Recent Uploads tab pane rather than a standalone card.
+    assert 'id="pane-recent"' in html
+    assert 'id="importTable"' in html
+
+
+def test_upload_page_has_progress_and_controls(client):
+    html = client.get("/upload").text
+    assert 'id="uploadProgressWrap"' in html
+    assert 'id="uploadProgressText"' in html
+    assert 'id="uploadProgressBar"' in html
+    assert 'id="accountSelect"' in html
+    assert 'id="importerSelect"' in html
+    assert 'id="uploadBtn"' in html
+    assert 'id="resultModal"' in html
+
+
+# ── Upload page: CLASSIFICATION card ──────────────────────────────────────────
+def test_upload_page_classification_card_is_tabbed(client):
+    html = client.get("/upload").text
+    assert '>Classification<' in html
+    for anchor in ('id="tab-aicat"', 'id="pane-aicat"',
+                   'id="tab-rules"', 'id="pane-rules"'):
+        assert anchor in html
+
+
+def test_upload_page_classification_tab_contents(client):
+    html = client.get("/upload").text
+    # Pending table + the two AI elements moved into the AI Categorization tab.
+    assert 'id="pendingTxTable"' in html
+    assert 'id="categorizerTracker"' in html
+    assert 'id="categorizerStatusPill"' in html
+    # Rules table lives in the second tab.
+    assert 'id="rulesTableWrap"' in html
+
+
+def test_upload_page_includes_edit_and_rule_modals(client):
+    html = client.get("/upload").text
+    assert 'id="editCategoryModal"' in html
+    assert 'id="createRuleModal"' in html

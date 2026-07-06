@@ -1,4 +1,5 @@
 {% extends "app/layouts/base.html" %}
+{% from "assets/templates/partials/tabs.html" import tab_nav %}
 {% block title %}{{ page_title }}{% endblock %}
 
 {% block content %}
@@ -34,16 +35,10 @@
       </div>
       <div id="collapseAcctCard" class="accordion-collapse collapse" data-bs-parent="#acctAccordion">
         {% if show_transfers %}
-        <ul class="nav nav-underline px-3 pt-2" id="accountsTabNav" role="tablist">
-          <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="tab-accounts" data-bs-toggle="tab" data-bs-target="#pane-accounts"
-                    type="button" role="tab" aria-controls="pane-accounts" aria-selected="true">Accounts</button>
-          </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-transfers" data-bs-toggle="tab" data-bs-target="#pane-transfers"
-                    type="button" role="tab" aria-controls="pane-transfers" aria-selected="false">Transfers</button>
-          </li>
-        </ul>
+        {{ tab_nav([
+          {'id': 'tab-accounts', 'target': 'pane-accounts', 'label': 'Accounts', 'active': true},
+          {'id': 'tab-transfers', 'target': 'pane-transfers', 'label': 'Transfers', 'active': false},
+        ], nav_id='accountsTabNav', ul_class='px-3 pt-2') }}
         <div class="tab-content">
           <div class="tab-pane fade show active" id="pane-accounts" role="tabpanel" aria-labelledby="tab-accounts">
             <div id="accountsTable"></div>

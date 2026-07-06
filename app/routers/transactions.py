@@ -56,6 +56,7 @@ def _exclude_transfers(q):
 def list_transactions(
     category: Optional[str] = None,
     account_type: Optional[str] = None,
+    pending_only: bool = False,
     page: int = 1,
     limit: int = PAGE_SIZE,
     db: Session = Depends(get_db),
@@ -65,6 +66,8 @@ def list_transactions(
     q = _filter_by_account_type(q, account_type)
     if category:
         q = q.filter(Transaction.category == category)
+    if pending_only:
+        q = q.filter(Transaction.model_confidence == -1)
     total = q.count()
     data = q.order_by(Transaction.date.desc()).offset(offset).limit(limit).all()
     return {"data": data, "limit": limit, "offset": offset, "total": total}

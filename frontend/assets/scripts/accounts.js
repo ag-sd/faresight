@@ -11,7 +11,6 @@ let accountsTable, transfersTable, activityTable;
 let _allAccounts = [];
 let _bankLogos = {};
 let _topCardPageLimit = 5;  // overwritten from /api/config at boot
-let _editTxId = null;
 
 const ACCOUNT_TYPE_LABELS = {
   checking: 'Checking',
@@ -188,74 +187,13 @@ function initActivityTable() {
       data: response.data,
       last_page: Math.ceil(response.total / response.limit),
     }),
-    columns: [
-      {
-        title: 'Date', field: 'date', sorter: 'date',
-        headerFilter: 'input', width: 120,
-      },
-      {
-        title: 'Description', field: 'description',
-        headerFilter: 'input', widthGrow: 3,
-        formatter: (cell) => esc(String(cell.getValue())),
-      },
-      {
-        // Fixed width sized to the widest pill ("Entertainment & Subscriptions");
-        // the freed grow space goes to Source below.
-        title: 'Category', field: 'model_category', width: 210,
-        headerFilter: 'input',
-        formatter: modelCategoryFormatter,
-      },
-      {
-        title: 'Source', field: 'account_id', widthGrow: 2,
-        formatter: (cell) => {
-          const id = cell.getValue();
-          if (!id) return '—';
-          const acct = _allAccounts.find(a => a.id === id);
-          return acct ? esc(acct.name) : String(id);
-        },
-      },
-      {
-        title: 'Amount', field: 'amount', sorter: 'number',
-        headerFilter: 'input', hozAlign: 'right', cssClass: 'amount', width: 130,
-        formatter: amountFormatter,
-      },
-      {
-        title: '', headerSort: false, hozAlign: 'center', width: 48,
-        formatter: () => '<button class="btn btn-link btn-sm p-0 text-secondary"><i class="fa-regular fa-pen-to-square"></i></button>',
-        cellClick: (_e, cell) => openEditModal(cell.getRow().getData()),
-      },
-    ],
+    // Category fixed-width (widest pill) so the freed grow space goes to Source.
+    columns: txColumns({ accounts: () => _allAccounts, categoryWidth: 210, sourceGrow: 2, withEdit: true }),
   });
 }
 
-// ── Edit category modal ───────────────────────────────────────────────────────
-function openEditModal(tx) {
-  _editTxId = tx.id;
-  document.getElementById('editTxDate').textContent = tx.date;
-  document.getElementById('editTxDescription').textContent = tx.description;
-  const amount = parseFloat(tx.amount);
-  const neg = amount < 0;
-  const el = document.getElementById('editTxAmount');
-  el.textContent = (neg ? '-' : '+') + '$' + Math.abs(amount).toFixed(2);
-  el.className = neg ? 'text-danger' : 'text-success';
-  const sel = document.getElementById('editCategorySelect');
-  sel.innerHTML = Object.keys(CATEGORY_COLORS).sort()
-    .map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-  sel.value = (tx.model_category && tx.model_category in CATEGORY_COLORS)
-    ? tx.model_category : 'Other';
-  new bootstrap.Modal(document.getElementById('editCategoryModal')).show();
-}
-
-async function saveCategory() {
-  const category = document.getElementById('editCategorySelect').value;
-  await api(`/api/transactions/${_editTxId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model_category: category, model_confidence: 10, user_modified_category: true }),
-  });
-  bootstrap.Modal.getInstance(document.getElementById('editCategoryModal')).hide();
-  await activityTable.replaceData();
-}
+// openEditModal / saveCategory live in common.js; this page just supplies the refresh.
+afterCategorySave = () => activityTable.replaceData();
 
 // ── Source account dropdown ───────────────────────────────────────────────────
 function populateSourceSelect(excludeId) {

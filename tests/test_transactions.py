@@ -111,6 +111,20 @@ def test_list_filter_by_category(client):
     assert len(body["data"]) == 2
 
 
+def test_list_filter_pending_only(client):
+    """pending_only=true returns only rows still awaiting categorization (-1)."""
+    make_tx(client, description="Pending row")                       # default model_confidence = -1
+    make_tx(client, description="Done row", model_confidence=10)
+
+    body = client.get("/api/transactions?pending_only=true").json()
+    assert body["total"] == 1
+    assert [t["description"] for t in body["data"]] == ["Pending row"]
+
+    # Absent/false → unfiltered (both rows).
+    assert client.get("/api/transactions").json()["total"] == 2
+    assert client.get("/api/transactions?pending_only=false").json()["total"] == 2
+
+
 def test_list_filter_by_account_type_credit_card(client):
     cc_id = _make_account(client, account_type="credit_card")
     bank_id = _make_account(client, account_type="checking")
