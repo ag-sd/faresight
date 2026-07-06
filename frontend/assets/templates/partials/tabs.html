@@ -1,0 +1,16 @@
+{#
+  Renders a Bootstrap `nav nav-underline` tab bar.
+  `tabs` is a list of dicts: {id, target, label, active}.
+  The matching `.tab-pane` bodies stay inline in the calling template.
+#}
+{% macro tab_nav(tabs, nav_id='', ul_class='') -%}
+<ul class="nav nav-underline {{ ul_class }}"{% if nav_id %} id="{{ nav_id }}"{% endif %} role="tablist">
+  {%- for t in tabs %}
+  <li class="nav-item" role="presentation">
+    <button class="nav-link{% if t.active %} active{% endif %}" id="{{ t.id }}"
+            data-bs-toggle="tab" data-bs-target="#{{ t.target }}" type="button" role="tab"
+            aria-controls="{{ t.target }}" aria-selected="{{ 'true' if t.active else 'false' }}">{{ t.label }}</button>
+  </li>
+  {%- endfor %}
+</ul>
+{%- endmacro %}
