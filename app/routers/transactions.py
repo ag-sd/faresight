@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.config import PAGE_SIZE
 from app.database import get_db
 from app.importers import IMPORTERS
-from app.models import Account, AccountType, FileImport, Rule, Transaction, dedup_hash_for
+from app.models import Account, AccountType, Category, FileImport, Rule, Transaction, dedup_hash_for
 from app.schemas import FileImportOut, PaginatedFileImports, PaginatedTransactions, TransactionCreate, TransactionCreateWithFile, TransactionOut, TransactionUpdate
 
 router = APIRouter(prefix="/api", tags=["transactions"])
@@ -20,13 +20,6 @@ logger = logging.getLogger(__name__)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-# Subset of app.categorizer.ALLOWED_CATEGORIES — money movement, not spending.
-# "Transfers & Fees" was split into Transfers/Fees/Interest Income/Interest Paid:
-# only Transfers is money movement and excluded here. Fees and Interest Paid are
-# real spending, and Interest Income is real income — all three are counted.
-# This tuple is the single point to update.
-TRANSFER_CATEGORIES = ("Payments", "Transfers")
 
 
 def _filter_by_account_type(q, account_type: Optional[str]):
@@ -63,15 +56,21 @@ def _dedupe_rows(db: Session, txs) -> tuple[list, int]:
     return to_insert, skipped
 
 
-def _exclude_transfers(q):
-    """Exclude payment/transfer rows from spending aggregates.
+def _exclude_internal(q, db: Session):
+    """Exclude bucket='internal' categories from spending aggregates.
 
-    NULL-safe: SQL NOT IN drops NULL rows, so keep model_category IS NULL rows.
+    NULL-safe: SQL NOT IN silently drops NULL rows, so we explicitly keep
+    model_category IS NULL rows (legacy / uncategorized transactions).
     """
+    names = [
+        r.name for r in db.query(Category).filter(Category.bucket == "internal").all()
+    ]
+    if not names:
+        return q
     return q.filter(
         or_(
             Transaction.model_category.is_(None),
-            Transaction.model_category.notin_(TRANSFER_CATEGORIES),
+            Transaction.model_category.notin_(names),
         )
     )
 
@@ -153,7 +152,7 @@ def delete_transaction(tx_id: int, db: Session = Depends(get_db)):
 def summary_by_category(account_type: Optional[str] = None, db: Session = Depends(get_db)):
     q = db.query(Transaction.category, func.sum(Transaction.amount).label("total"))
     q = _filter_by_account_type(q, account_type)
-    q = _exclude_transfers(q)
+    q = _exclude_internal(q, db)
     rows = q.group_by(Transaction.category).all()
     return [{"category": r.category, "total": round(r.total, 2)} for r in rows]
 
@@ -180,7 +179,7 @@ def summary_by_month(account_type: Optional[str] = None, db: Session = Depends(g
         func.sum(Transaction.amount).label("total"),
     )
     q = _filter_by_account_type(q, account_type)
-    q = _exclude_transfers(q)
+    q = _exclude_internal(q, db)
     rows = q.group_by("year", "month").order_by("year", "month").all()
     return [
         {"year": int(r.year), "month": int(r.month), "total": round(r.total, 2)}
@@ -204,7 +203,7 @@ def summary_by_category_for_period(
         )
     )
     q = _filter_by_account_type(q, account_type)
-    q = _exclude_transfers(q)
+    q = _exclude_internal(q, db)
     if month is not None:
         q = q.filter(extract("month", Transaction.date) == month)
     rows = q.group_by(Transaction.model_category).all()

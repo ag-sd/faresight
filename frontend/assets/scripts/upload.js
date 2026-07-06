@@ -398,6 +398,161 @@ async function deleteRule(id) {
   loadRules();
 }
 
+// ── Categories table ──────────────────────────────────────────────────────────
+
+let _categoriesTable = null;
+
+async function initCategoriesTable() {
+  const cats = await api('/api/categories');
+  if (_categoriesTable) {
+    _categoriesTable.setData(cats);
+    return;
+  }
+  _categoriesTable = new Tabulator('#categoriesTable', {
+    data: cats,
+    layout: 'fitColumns',
+    columns: [
+      {
+        title: 'Color', field: 'color', width: 72, hozAlign: 'center', headerSort: false,
+        formatter: cell => {
+          const c = cell.getValue();
+          return `<span class="d-inline-block rounded" style="width:24px;height:24px;background:${esc(c)};border:1px solid #dee2e6" title="${esc(c)}"></span>`;
+        },
+      },
+      { title: 'Name', field: 'name', widthGrow: 2 },
+      {
+        title: 'Bucket', field: 'bucket', widthGrow: 1,
+        editor: 'list', editorParams: { values: ['spend', 'income', 'internal'] },
+        cellEdited: async cell => {
+          try {
+            await api(`/api/categories/${encodeURIComponent(cell.getRow().getData().name)}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ bucket: cell.getValue() }),
+            });
+            await loadCategories();
+          } catch (e) {
+            alert('Failed to update bucket: ' + e.message);
+            cell.restoreOldValue();
+          }
+        },
+      },
+      {
+        title: 'Description', field: 'description', widthGrow: 3,
+        editor: 'input',
+        cellEdited: async cell => {
+          try {
+            await api(`/api/categories/${encodeURIComponent(cell.getRow().getData().name)}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ description: cell.getValue() }),
+            });
+          } catch (e) {
+            alert('Failed to update description: ' + e.message);
+            cell.restoreOldValue();
+          }
+        },
+      },
+      {
+        title: '', headerSort: false, hozAlign: 'center', width: 80,
+        formatter: () =>
+          '<div class="d-flex gap-1 justify-content-center">' +
+          '<button class="btn btn-sm btn-outline-primary cat-edit-btn" title="Edit color"><i class="fa-regular fa-pen-to-square"></i></button>' +
+          '<button class="btn btn-sm btn-outline-danger cat-del-btn" title="Delete"><i class="fa-regular fa-trash-can"></i></button>' +
+          '</div>',
+        cellClick: (_e, cell) => {
+          const tgt = _e.target.closest('button');
+          if (!tgt) return;
+          const name = cell.getRow().getData().name;
+          if (tgt.classList.contains('cat-del-btn')) deleteCategory(name);
+          if (tgt.classList.contains('cat-edit-btn')) openEditCategoryModal(cell.getRow().getData());
+        },
+      },
+    ],
+  });
+}
+
+function openCreateCategoryModal() {
+  document.getElementById('categoryModalTitle').textContent = 'Add Category';
+  document.getElementById('catName').value = '';
+  document.getElementById('catName').disabled = false;
+  document.getElementById('catColor').value = '#6c757d';
+  document.getElementById('catColorHex').textContent = '#6c757d';
+  document.getElementById('catBucket').value = 'spend';
+  document.getElementById('catDescription').value = '';
+  document.getElementById('categoryModalError').classList.add('d-none');
+  document.getElementById('catSaveBtn').onclick = saveCategoryCreate;
+  new bootstrap.Modal(document.getElementById('categoryModal')).show();
+}
+
+function openEditCategoryModal(cat) {
+  document.getElementById('categoryModalTitle').textContent = 'Edit Category';
+  document.getElementById('catName').value = cat.name;
+  document.getElementById('catName').disabled = true;
+  document.getElementById('catColor').value = cat.color;
+  document.getElementById('catColorHex').textContent = cat.color;
+  document.getElementById('catBucket').value = cat.bucket;
+  document.getElementById('catDescription').value = cat.description ?? '';
+  document.getElementById('categoryModalError').classList.add('d-none');
+  document.getElementById('catSaveBtn').onclick = () => saveCategoryEdit(cat.name);
+  new bootstrap.Modal(document.getElementById('categoryModal')).show();
+}
+
+// Keep the hex label in sync with the color picker.
+document.getElementById('catColor')?.addEventListener('input', e => {
+  document.getElementById('catColorHex').textContent = e.target.value;
+});
+
+async function saveCategoryCreate() {
+  const errEl = document.getElementById('categoryModalError');
+  errEl.classList.add('d-none');
+  try {
+    await api('/api/categories', {
+      method: 'POST',
+      body: JSON.stringify({
+        name:        document.getElementById('catName').value.trim(),
+        color:       document.getElementById('catColor').value,
+        bucket:      document.getElementById('catBucket').value,
+        description: document.getElementById('catDescription').value.trim() || null,
+      }),
+    });
+    bootstrap.Modal.getInstance(document.getElementById('categoryModal')).hide();
+    await loadCategories();
+    await initCategoriesTable();
+  } catch (e) {
+    errEl.textContent = e.message.includes('already exists') || e.message.includes('409')
+      ? 'A category with this name already exists.'
+      : 'Failed to save: ' + e.message;
+    errEl.classList.remove('d-none');
+  }
+}
+
+async function saveCategoryEdit(name) {
+  const errEl = document.getElementById('categoryModalError');
+  errEl.classList.add('d-none');
+  try {
+    await api(`/api/categories/${encodeURIComponent(name)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        color:       document.getElementById('catColor').value,
+        bucket:      document.getElementById('catBucket').value,
+        description: document.getElementById('catDescription').value.trim() || null,
+      }),
+    });
+    bootstrap.Modal.getInstance(document.getElementById('categoryModal')).hide();
+    await loadCategories();
+    await initCategoriesTable();
+  } catch (e) {
+    errEl.textContent = 'Failed to save: ' + e.message;
+    errEl.classList.remove('d-none');
+  }
+}
+
+async function deleteCategory(name) {
+  if (!confirm(`Delete category "${name}"?\n\nExisting transactions keep the category name as a label — they will appear magenta until re-categorized.`)) return;
+  await api(`/api/categories/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  await loadCategories();
+  await initCategoriesTable();
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init() {
@@ -436,9 +591,13 @@ async function init() {
     const cfg = await api('/api/config');
     _topCardPageLimit = cfg.top_card_page_limit ?? _topCardPageLimit;
   } catch (_) { /* keep default */ }
+  // loadCategories() is called by common.js boot — await the same promise chain
+  // so _categoryMap is populated before any table that needs category colors.
+  await loadCategories();
   const accountMap = await init();
   initImportTable(accountMap);
   initPendingTable();  // after init() so accountsList is populated
+  initCategoriesTable();
 })();
 
 loadRules();

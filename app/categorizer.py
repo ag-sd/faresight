@@ -30,44 +30,14 @@ from sqlalchemy import update
 from app.config import CATEGORIZATION_POLL_INTERVAL_S, OLLAMA_HOST, OLLAMA_MODEL
 
 if TYPE_CHECKING:
-    pass
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 5
 
-# Single source of truth: canonical label → one-line description for the model.
-# Order is significant — it drives both the prompt block (build_prompt) and the
-# allow-list. Dicts preserve insertion order (Python 3.7+).
-CATEGORY_DESCRIPTIONS = {
-    "Groceries": "supermarkets, grocery and food markets",
-    "Dining & Takeout": "restaurants, cafes, bars, coffee, food delivery",
-    "Transportation": "gas, parking, rideshare, transit, tolls, auto maintenance",
-    "Housing & Utilities": "rent, mortgage, electric, water, gas, internet, phone",
-    "Shopping": "retail, online marketplaces, clothing, electronics, household goods",
-    "Health & Personal Care": "pharmacy, doctors, dental, gym, salons",
-    "Entertainment & Subscriptions": "streaming, games, events, movies, memberships",
-    "Travel": "flights, hotels, car rentals, vacation spend",
-    "Income": "paychecks, deposits, refunds, dividends",
-    "Payments": "credit card payments, loan payments, bill pay",
-    "Transfers": "account-to-account transfers, ATM withdrawals, moving money",
-    "Fees": "bank fees, service charges, overdraft, late fees, foreign-transaction fees",
-    "Interest Income": "interest earned on savings, checking, CDs, and bonds (money in)",
-    "Interest Paid": "interest charged on credit cards, loans, mortgages; finance charges (money out)",
-    "Other": "use ONLY when no category above clearly fits",
-}
-
-# Public allow-list, derived — preserves the existing list contract for the
-# validator (_CANONICAL) and tests. Do not maintain this by hand.
-ALLOWED_CATEGORIES = list(CATEGORY_DESCRIPTIONS)
-
-# Rendered "- <label>: <description>" block injected into build_prompt so the
-# prompt's category list can never drift from CATEGORY_DESCRIPTIONS.
-_CATEGORY_BLOCK = "\n".join(
-    f"- {name}: {desc}" for name, desc in CATEGORY_DESCRIPTIONS.items()
-)
-
 # Fallback used when the model output is invalid, missing, or unparseable.
+# Kept as a constant: it's a sentinel, not a category from the DB list.
 FALLBACK_CATEGORY = "Other"
 FALLBACK_CONFIDENCE = 0
 
@@ -77,6 +47,27 @@ _CONFIDENCE_MAX = 10
 
 # Sentinel written to model_confidence when a transaction is queued for categorization.
 PENDING_CONFIDENCE = -1
+
+
+# ── Category data (loaded from DB each cycle) ──────────────────────────────────
+
+def _load_category_data(db: "Session") -> dict:
+    """Query the categories table and return the data the categorizer needs.
+
+    Loaded once per poll cycle so user edits take effect without a restart.
+    Returns a dict with:
+      allowed  — list[str] of valid category names in sort_order
+      canonical — {lower_name: canonical_name} for case-insensitive matching
+      block     — formatted "- name: description" string for prompt injection
+    """
+    from app.models import Category
+    rows = db.query(Category).order_by(Category.sort_order, Category.name).all()
+    allowed = [r.name for r in rows]
+    canonical = {r.name.lower(): r.name for r in rows}
+    block = "\n".join(
+        f"- {r.name}: {r.description or r.name}" for r in rows
+    )
+    return {"allowed": allowed, "canonical": canonical, "block": block}
 
 
 # ── Ollama HTTP/process seams (monkeypatched in tests) ──────────────────────────
@@ -157,7 +148,7 @@ def _wait_for_ollama() -> list[str]:
 
 # ── Prompt  ─────────────────────────
 
-def build_prompt(batch: list[dict]) -> str:
+def build_prompt(batch: list[dict], category_block: str) -> str:
     """Build the inference prompt for a batch of transactions."""
     return (
         "You are a transaction categorization engine. Assign exactly ONE category to each\n"
@@ -166,7 +157,7 @@ def build_prompt(batch: list[dict]) -> str:
         "money in) as signals.\n"
         "\n"
         "ALLOWED CATEGORIES (use these labels exactly):\n"
-        f"{_CATEGORY_BLOCK}\n"
+        f"{category_block}\n"
         "\n"
         "CONFIDENCE SCORE (integer 0-10):\n"
         "- 10 = the description names a known merchant that maps cleanly to one category.\n"
@@ -200,10 +191,6 @@ def build_prompt(batch: list[dict]) -> str:
 
 # ── Parse + validate ────────────────────────────────────────────────────────────
 
-# Case-insensitive lookup → canonical casing.
-_CANONICAL = {c.lower(): c for c in ALLOWED_CATEGORIES}
-
-
 def _coerce_confidence(raw) -> int:
     """Coerce a model confidence to an int clamped to [0, 10]; 0 on failure."""
     try:
@@ -213,11 +200,16 @@ def _coerce_confidence(raw) -> int:
     return max(_CONFIDENCE_MIN, min(_CONFIDENCE_MAX, value))
 
 
-def _apply_results(results: list[dict], index: dict[int, "TransactionCreate"]) -> int:
+def _apply_results(
+    results: list[dict],
+    index: dict[int, "TransactionCreate"],
+    canonical_map: dict[str, str],
+) -> int:
     """Write back model_category/model_confidence onto the batch's transactions.
 
-    `index` maps run-level id → TransactionCreate. Returns the number of rows
-    that fell back to the FALLBACK_CATEGORY.
+    `index` maps run-level id → TransactionCreate. `canonical_map` is a
+    {lower_name: canonical_name} lookup built from the categories table.
+    Returns the number of rows that fell back to the FALLBACK_CATEGORY.
     """
     fell_back = 0
     seen: set[int] = set()
@@ -233,7 +225,7 @@ def _apply_results(results: list[dict], index: dict[int, "TransactionCreate"]) -
         seen.add(tid)
 
         raw_cat = item.get("category")
-        canonical = _CANONICAL.get(str(raw_cat).strip().lower()) if raw_cat else None
+        canonical = canonical_map.get(str(raw_cat).strip().lower()) if raw_cat else None
         if canonical is None:  # invalid / missing category
             tx.model_category = FALLBACK_CATEGORY
             tx.model_confidence = FALLBACK_CONFIDENCE
@@ -270,7 +262,9 @@ def _mark_batch_fallback(index: dict[int, "TransactionCreate"]) -> None:
 # ── Batch orchestration ─────────────────────────────────────────────────────────
 
 def _categorize_batch(
-    items: list[dict], index: dict[int, "TransactionCreate"]
+    items: list[dict],
+    index: dict[int, "TransactionCreate"],
+    cat_data: dict,
 ) -> tuple[int, int, bool]:
     """Infer + validate one batch. Retries once on failure, then falls back whole.
 
@@ -279,7 +273,7 @@ def _categorize_batch(
     retried = False
     for attempt in range(2):
         try:
-            prompt = build_prompt(items)
+            prompt = build_prompt(items, cat_data["block"])
             logger.info(f"Making call to Ollama")
             raw = _generate(prompt)
             results = _parse_results(raw)
@@ -292,7 +286,7 @@ def _categorize_batch(
             logger.warning("Batch inference failed again (%s); marking needs-attention", e)
             _mark_batch_fallback(index)
             return len(index), len(index), retried
-        fell_back = _apply_results(results, index)
+        fell_back = _apply_results(results, index, cat_data["canonical"])
         return len(index), fell_back, retried
 
     # Unreachable, but keeps type-checkers happy.
@@ -315,6 +309,7 @@ def _categorize_pending(db) -> int:
     from app.models import Transaction
     from app.schemas import TransactionCreate
 
+    cat_data = _load_category_data(db)
     rows = db.query(Transaction).filter(
         Transaction.model_confidence == PENDING_CONFIDENCE
     ).all()
@@ -350,7 +345,7 @@ def _categorize_pending(db) -> int:
         ]
 
         try:
-            processed, fell_back, retried = _categorize_batch(items, index)
+            processed, fell_back, retried = _categorize_batch(items, index, cat_data)
         except Exception as e:  # noqa: BLE001 — isolate unexpected per-batch errors
             logger.warning("Batch %d crashed (%s); marking fallback", batch_no, e)
             _mark_batch_fallback(index)

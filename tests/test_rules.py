@@ -82,8 +82,8 @@ def test_create_rule_duplicate(client):
 
 
 def test_create_rule_all_allowed_categories(client):
-    from app.categorizer import ALLOWED_CATEGORIES
-    for category in ALLOWED_CATEGORIES:
+    categories = [c["name"] for c in client.get("/api/categories").json()]
+    for category in categories:
         r = client.post("/api/rules", json={**VALID_RULE, "category": category})
         assert r.status_code == 201, f"Failed for category {category!r}: {r.text}"
 

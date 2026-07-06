@@ -178,4 +178,26 @@ def migrate_db() -> None:
             )
         """))
 
+        # ── categories ────────────────────────────────────────────────────────
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS categories (
+                id          INTEGER PRIMARY KEY,
+                name        VARCHAR(100) UNIQUE NOT NULL,
+                color       VARCHAR(7)   NOT NULL DEFAULT '#6c757d',
+                bucket      VARCHAR(20)  NOT NULL DEFAULT 'spend',
+                description VARCHAR(500),
+                sort_order  INTEGER      NOT NULL DEFAULT 0
+            )
+        """))
+        # Seed defaults only on first creation; INSERT OR IGNORE is idempotent.
+        seed_count = conn.execute(text("SELECT COUNT(*) FROM categories")).scalar()
+        if seed_count == 0:
+            from app.category_defaults import DEFAULT_CATEGORIES
+            for i, (name, color, bucket, desc) in enumerate(DEFAULT_CATEGORIES):
+                conn.execute(text(
+                    "INSERT OR IGNORE INTO categories "
+                    "(name, color, bucket, description, sort_order) "
+                    "VALUES (:n, :c, :b, :d, :s)"
+                ), {"n": name, "c": color, "b": bucket, "d": desc, "s": i})
+
         conn.commit()

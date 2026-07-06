@@ -51,11 +51,23 @@ def isolated_nas(monkeypatch, tmp_path):
     monkeypatch.setattr("app.sync.NAS_SHARE_PATH", str(tmp_path / "nas" / "faresight.db"))
 
 
+def _seed_categories():
+    """Populate the categories table with the 15 defaults after schema creation."""
+    from app.category_defaults import DEFAULT_CATEGORIES
+    from app.models import Category
+    db = TestingSession()
+    for i, (name, color, bucket, desc) in enumerate(DEFAULT_CATEGORIES):
+        db.add(Category(name=name, color=color, bucket=bucket, description=desc, sort_order=i))
+    db.commit()
+    db.close()
+
+
 @pytest.fixture(autouse=True)
 def reset_db():
     """Drop and recreate all tables before every test for full isolation."""
     Base.metadata.drop_all(bind=_engine)
     Base.metadata.create_all(bind=_engine)
+    _seed_categories()
     yield
     Base.metadata.drop_all(bind=_engine)
 

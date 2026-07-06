@@ -7,9 +7,21 @@ import pytest
 
 import app.categorizer as cz
 from app.categorizer import OLLAMA_MODEL, PENDING_CONFIDENCE
+from app.category_defaults import DEFAULT_CATEGORIES
 from app.models import Transaction
 from app.schemas import TransactionCreate, TransactionOut
 from tests.conftest import TestingSession
+
+# Canonical map derived from the seeded defaults — mirrors what _load_category_data returns.
+_CANONICAL = {name.lower(): name for name, *_ in DEFAULT_CATEGORIES}
+_CATEGORY_BLOCK = "\n".join(
+    f"- {name}: {desc}" for name, _color, _bucket, desc in DEFAULT_CATEGORIES
+)
+_ALLOWED = [name for name, *_ in DEFAULT_CATEGORIES]
+
+
+def _cat_data():
+    return {"allowed": _ALLOWED, "canonical": _CANONICAL, "block": _CATEGORY_BLOCK}
 
 
 def tx(description="Thing", amount=-10.0):
@@ -88,7 +100,7 @@ def test_apply_valid_results_with_canonical_casing():
         {"id": 0, "category": "groceries", "confidence": 8},        # lowercase
         {"id": 1, "category": "DINING & TAKEOUT", "confidence": 5},  # uppercase
     ]
-    assert cz._apply_results(results, index) == 0
+    assert cz._apply_results(results, index, _CANONICAL) == 0
     assert txs[0].model_category == "Groceries"
     assert txs[0].model_confidence == 8
     assert txs[1].model_category == "Dining & Takeout"
@@ -97,13 +109,13 @@ def test_apply_valid_results_with_canonical_casing():
 
 def test_apply_clamps_confidence():
     t = tx()
-    cz._apply_results([{"id": 0, "category": "Travel", "confidence": 42}], {0: t})
+    cz._apply_results([{"id": 0, "category": "Travel", "confidence": 42}], {0: t}, _CANONICAL)
     assert t.model_confidence == 10
 
 
 def test_apply_invalid_category_falls_back():
     t = tx()
-    fb = cz._apply_results([{"id": 0, "category": "Nonsense", "confidence": 9}], {0: t})
+    fb = cz._apply_results([{"id": 0, "category": "Nonsense", "confidence": 9}], {0: t}, _CANONICAL)
     assert fb == 1
     assert t.model_category == "Other"
     assert t.model_confidence == 0
@@ -111,7 +123,7 @@ def test_apply_invalid_category_falls_back():
 
 def test_apply_unknown_id_ignored_and_row_falls_back():
     t = tx()
-    fb = cz._apply_results([{"id": 99, "category": "Travel", "confidence": 9}], {0: t})
+    fb = cz._apply_results([{"id": 99, "category": "Travel", "confidence": 9}], {0: t}, _CANONICAL)
     assert fb == 1
     assert t.model_category == "Other"
     assert t.model_confidence == 0
@@ -120,7 +132,7 @@ def test_apply_unknown_id_ignored_and_row_falls_back():
 def test_apply_missing_row_falls_back():
     txs = [tx(), tx()]
     index = {0: txs[0], 1: txs[1]}
-    fb = cz._apply_results([{"id": 0, "category": "Travel", "confidence": 6}], index)
+    fb = cz._apply_results([{"id": 0, "category": "Travel", "confidence": 6}], index, _CANONICAL)
     assert fb == 1
     assert txs[0].model_category == "Travel"
     assert txs[1].model_category == "Other"
@@ -130,37 +142,42 @@ def test_apply_missing_row_falls_back():
 # ── build_prompt (stub sanity) ──────────────────────────────────────────────────
 
 def test_build_prompt_includes_batch_and_categories():
-    prompt = cz.build_prompt([{"id": 0, "description": "Blue Bottle Coffee", "amount": -5.0}])
+    prompt = cz.build_prompt(
+        [{"id": 0, "description": "Blue Bottle Coffee", "amount": -5.0}],
+        _CATEGORY_BLOCK,
+    )
     assert "Blue Bottle Coffee" in prompt
-    for category in cz.ALLOWED_CATEGORIES:
-        assert f"- {category}:" in prompt  # rendered as a described allow-list line
+    for name, *_ in DEFAULT_CATEGORIES:
+        assert f"- {name}:" in prompt  # rendered as a described allow-list line
     assert "Score honestly" in prompt  # rubric present — not the old stub
 
 
-def test_allowed_categories_derives_from_descriptions():
-    # CATEGORY_DESCRIPTIONS is the single source of truth; the allow-list and the
-    # prompt block are both derived from it and can never drift.
-    assert list(cz.CATEGORY_DESCRIPTIONS) == cz.ALLOWED_CATEGORIES
-    for cat, desc in cz.CATEGORY_DESCRIPTIONS.items():
-        assert isinstance(desc, str) and desc.strip(), f"{cat} missing a description"
-
-    prompt = cz.build_prompt([{"id": 0, "description": "x", "amount": -1.0}])
-    for cat, desc in cz.CATEGORY_DESCRIPTIONS.items():
-        assert f"- {cat}: {desc}" in prompt
+def test_categories_db_backed_and_all_fields_present():
+    # Categories now live in the DB; _load_category_data must return all 15 defaults.
+    db = TestingSession()
+    try:
+        data = cz._load_category_data(db)
+        assert len(data["allowed"]) == 15
+        assert "Groceries" in data["allowed"]
+        assert data["canonical"]["groceries"] == "Groceries"
+        for name, *_ in DEFAULT_CATEGORIES:
+            assert f"- {name}:" in data["block"]
+    finally:
+        db.close()
 
 
 def test_build_prompt_uses_split_transfer_categories():
-    # "Transfers & Fees" was split into four distinct labels.
-    prompt = cz.build_prompt([{"id": 0, "description": "x", "amount": -1.0}])
+    # "Transfers & Fees" was split into four distinct labels; none of the old label present.
+    prompt = cz.build_prompt([{"id": 0, "description": "x", "amount": -1.0}], _CATEGORY_BLOCK)
     assert "Transfers & Fees" not in prompt
     for category in ("Transfers", "Fees", "Interest Income", "Interest Paid"):
-        assert category in cz.ALLOWED_CATEGORIES
+        assert category in _ALLOWED
         assert category in prompt
 
 
 def test_apply_other_from_model_preserves_confidence():
     t = tx()
-    fb = cz._apply_results([{"id": 0, "category": "Other", "confidence": 3}], {0: t})
+    fb = cz._apply_results([{"id": 0, "category": "Other", "confidence": 3}], {0: t}, _CANONICAL)
     assert fb == 0
     assert t.model_category == "Other"
     assert t.model_confidence == 3

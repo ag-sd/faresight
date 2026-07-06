@@ -94,14 +94,21 @@
     <div class="card-header pt-3 pb-2">
       <h2 class="h6 text-uppercase text-muted fw-semibold mb-2">Classification</h2>
       {{ tab_nav([
-        {'id': 'tab-aicat', 'target': 'pane-aicat', 'label': 'AI Categorization', 'active': true},
-        {'id': 'tab-rules', 'target': 'pane-rules', 'label': 'Classification Rules', 'active': false},
+        {'id': 'tab-aicat',       'target': 'pane-aicat',       'label': 'AI Categorization',    'active': true},
+        {'id': 'tab-rules',       'target': 'pane-rules',       'label': 'Classification Rules', 'active': false},
+        {'id': 'tab-categories',  'target': 'pane-categories',  'label': 'Categories',           'active': false},
       ], nav_id='classificationTabNav') }}
     </div>
     <div class="tab-content">
 
       <div class="tab-pane fade show active" id="pane-aicat" role="tabpanel" aria-labelledby="tab-aicat">
         <div class="card-body p-4">
+
+          <!-- Categorizer subprocess status -->
+          <div class="d-flex align-items-center gap-2 mb-4">
+            <span class="small text-muted fw-semibold text-uppercase">AI Categorizer</span>
+            <span id="categorizerStatusPill" class="badge rounded-pill bg-secondary">…</span>
+          </div>
 
           <!-- Categorization progress -->
           <div id="categorizerTracker" class="mb-4 d-none">
@@ -113,12 +120,6 @@
               <div id="categorizerBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
                    style="width: 0%"></div>
             </div>
-          </div>
-
-          <!-- Categorizer subprocess status -->
-          <div class="d-flex align-items-center gap-2 mb-4">
-            <span class="small text-muted fw-semibold text-uppercase">AI Categorizer</span>
-            <span id="categorizerStatusPill" class="badge rounded-pill bg-secondary">…</span>
           </div>
 
           <!-- Transactions pending categorization -->
@@ -134,6 +135,60 @@
         </div>
       </div>
 
+      <div class="tab-pane fade" id="pane-categories" role="tabpanel" aria-labelledby="tab-categories">
+        <div class="card-body p-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <span class="text-muted small">Manage spending categories, colors, and buckets. Unknown categories render in magenta.</span>
+            <button class="btn btn-sm btn-outline-primary" onclick="openCreateCategoryModal()">
+              <i class="fa-solid fa-plus me-1"></i>Add Category
+            </button>
+          </div>
+          <div id="categoriesTable"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Create/Edit Category Modal -->
+  <div class="modal fade" id="categoryModal" tabindex="-1" aria-labelledby="categoryModalTitle" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="categoryModalTitle">Add Category</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="categoryModalError" class="alert alert-danger d-none small"></div>
+          <div class="mb-3">
+            <label for="catName" class="form-label fw-semibold">Name</label>
+            <input type="text" class="form-control" id="catName" placeholder="e.g. Gifts">
+          </div>
+          <div class="mb-3">
+            <label for="catColor" class="form-label fw-semibold">Color</label>
+            <div class="d-flex align-items-center gap-2">
+              <input type="color" class="form-control form-control-color" id="catColor" value="#6c757d" style="width:48px">
+              <span class="small text-muted" id="catColorHex">#6c757d</span>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label for="catBucket" class="form-label fw-semibold">Type</label>
+            <select class="form-select" id="catBucket">
+              <option value="spend">Spend</option>
+              <option value="income">Income</option>
+              <option value="internal">Internal (excluded from summaries)</option>
+            </select>
+          </div>
+          <div class="mb-1">
+            <label for="catDescription" class="form-label fw-semibold">Description <span class="text-muted fw-normal">(optional)</span></label>
+            <input type="text" class="form-control" id="catDescription" placeholder="Short description for the AI prompt">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="catSaveBtn" onclick="saveCategoryModal()">Save</button>
+        </div>
+      </div>
     </div>
   </div>
 

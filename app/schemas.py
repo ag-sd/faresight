@@ -99,6 +99,31 @@ class FileImportOut(BaseModel):
     importer: Optional[str] = None
 
 
+# ── Categories ───────────────────────────────────────────────────────────────
+
+VALID_BUCKETS = {"income", "spend", "internal"}
+
+
+class CategoryCreate(BaseModel):
+    name: str
+    color: str = "#6c757d"
+    bucket: str  # validated against VALID_BUCKETS in the router
+    description: Optional[str] = None
+
+
+class CategoryUpdate(BaseModel):
+    color: Optional[str] = None
+    bucket: Optional[str] = None
+    description: Optional[str] = None
+
+
+class CategoryOut(CategoryCreate):
+    id: int
+    sort_order: int
+
+    model_config = {"from_attributes": True}
+
+
 # ── Rules ─────────────────────────────────────────────────────────────────────
 
 class RuleCreate(BaseModel):

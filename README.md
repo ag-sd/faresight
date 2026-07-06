@@ -24,7 +24,8 @@ faresight/
 │   ├── sync.py            # NAS sync state machine (startup pull, periodic push, lock file)
 │   ├── categorizer.py     # Background AI categorization worker (Ollama)
 │   ├── routers/
-│   │   ├── transactions.py  # /api/transactions, /api/summary/*, /api/categories
+│   │   ├── transactions.py  # /api/transactions, /api/summary/*
+│   │   ├── categories.py   # /api/categories (CRUD)
 │   │   ├── accounts.py      # /api/accounts, /api/accounts/bank-logos
 │   │   ├── rules.py         # /api/rules (classification rules CRUD + apply)
 │   │   └── sync.py          # /api/sync, /api/sync/status, /api/sync/go-offline
@@ -123,7 +124,10 @@ The local DB directory is created automatically on first run.
 | DELETE | `/api/transactions/{id}`      | Delete                          |
 | GET    | `/api/summary/by-category`    | Totals grouped by category      |
 | GET    | `/api/summary/by-month`       | Totals grouped by year+month    |
-| GET    | `/api/categories`             | Distinct category list          |
+| GET    | `/api/categories`             | All categories (CRUD managed)   |
+| POST   | `/api/categories`             | Create a category               |
+| PATCH  | `/api/categories/{name}`      | Update color/bucket/description |
+| DELETE | `/api/categories/{name}`      | Delete a category               |
 
 Interactive docs at http://localhost:8000/docs.
 
@@ -244,6 +248,15 @@ erDiagram
         string   category
         string   importer
         datetime created_at
+    }
+
+    categories {
+        int      id          PK
+        string   name
+        string   color
+        string   bucket
+        string   description
+        int      sort_order
     }
 
     file_imports  ||--o{ transactions : "file_id"

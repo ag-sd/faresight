@@ -99,6 +99,20 @@ class FileImport(Base):
     importer: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
 
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    color: Mapped[str] = mapped_column(String(7), nullable=False, default="#6c757d", server_default="'#6c757d'")
+    # income | spend | internal
+    bucket: Mapped[str] = mapped_column(String(20), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # Controls LLM prompt order and display order. Lower = earlier. Stable sort_order
+    # keeps the prompt identical across runs, preserving Ollama prompt cache hits.
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
 class Rule(Base):
     __tablename__ = "transaction_classification_rules"
     __table_args__ = (UniqueConstraint("description", "category", "importer"),)

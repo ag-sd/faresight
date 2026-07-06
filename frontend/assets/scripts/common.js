@@ -10,27 +10,27 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ── Category colour palette ───────────────────────────────────────────────────
-const CATEGORY_COLORS = {
-  'Groceries':                     '#30d158',
-  'Dining & Takeout':              '#ff9f0a',
-  'Transportation':                '#0071e3',
-  'Housing & Utilities':           '#636366',
-  'Shopping':                      '#bf5af2',
-  'Health & Personal Care':        '#ff375f',
-  'Entertainment & Subscriptions': '#5e5ce6',
-  'Travel':                        '#64d2ff',
-  'Income':                        '#34c759',
-  'Payments':                      '#32ade6',
-  'Transfers':                     '#8e8e93',
-  'Fees':                          '#a2845e',
-  'Interest Income':               '#63c88a',
-  'Interest Paid':                 '#c9557e',
-  'Other':                         '#aeaeb2',
-};
+// ── Category data (loaded from /api/categories at page boot) ─────────────────
+// {name: {color, bucket, description}} populated by loadCategories().
+// Unknown/orphaned category names render in magenta so they stand out.
+let _categoryMap = {};
+let _categoriesLoaded = null;  // shared promise so concurrent callers share one fetch
+
+async function loadCategories() {
+  if (!_categoriesLoaded) {
+    _categoriesLoaded = api('/api/categories')
+      .then(cats => { _categoryMap = Object.fromEntries(cats.map(c => [c.name, c])); })
+      .catch(() => { _categoriesLoaded = null; });  // reset on error so next call retries
+  }
+  return _categoriesLoaded;
+}
 
 function categoryColor(cat) {
-  return CATEGORY_COLORS[cat] ?? '#6c757d';
+  return _categoryMap[cat]?.color ?? '#ff2d78';
+}
+
+function categoryNames() {
+  return Object.keys(_categoryMap).sort();
 }
 
 // ── Shared Tabulator formatters ───────────────────────────────────────────────
@@ -112,9 +112,9 @@ function openEditModal(tx) {
   el.textContent = (neg ? '-' : '+') + '$' + Math.abs(amount).toFixed(2);
   el.className = neg ? 'text-danger' : 'text-success';
   const sel = document.getElementById('editCategorySelect');
-  sel.innerHTML = Object.keys(CATEGORY_COLORS).sort()
+  sel.innerHTML = categoryNames()
     .map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-  sel.value = (tx.model_category && tx.model_category in CATEGORY_COLORS)
+  sel.value = (tx.model_category && tx.model_category in _categoryMap)
     ? tx.model_category : 'Other';
   new bootstrap.Modal(document.getElementById('editCategoryModal')).show();
 }
@@ -195,7 +195,7 @@ async function openCreateRuleModal() {
     document.getElementById('editTxDescription').textContent;
 
   const catSel = document.getElementById('ruleCategory');
-  catSel.innerHTML = Object.keys(CATEGORY_COLORS)
+  catSel.innerHTML = categoryNames()
     .map(c => `<option value="${esc(c)}">${esc(c)}</option>`)
     .join('');
   catSel.value = document.getElementById('editCategorySelect').value;
@@ -230,4 +230,5 @@ async function saveRule() {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
+loadCategories();
 refreshNasBanner();

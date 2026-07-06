@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import TOP_CARD_PAGE_LIMIT
 from app.database import Base, engine, migrate_db
-from app.routers import accounts, rules, sync, transactions
+from app.routers import accounts, categories, rules, sync, transactions
 import app.sync as sync_mod
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s: %(message)s")
@@ -48,6 +48,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Faresight — Expense Tracker", lifespan=lifespan)
 app.include_router(accounts.router)
+app.include_router(categories.router)
 app.include_router(transactions.router)
 app.include_router(rules.router)
 app.include_router(sync.router)

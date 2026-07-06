@@ -5,10 +5,9 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.categorizer import ALLOWED_CATEGORIES
 from app.database import get_db
 from app.importers import IMPORTERS
-from app.models import FileImport, Rule, Transaction
+from app.models import Category, FileImport, Rule, Transaction
 from app.schemas import RuleCreate, RuleOut
 
 router = APIRouter(prefix="/api/rules", tags=["rules"])
@@ -24,7 +23,7 @@ def list_rules(importer: Optional[str] = None, db: Session = Depends(get_db)):
 
 @router.post("", response_model=RuleOut, status_code=201)
 def create_rule(body: RuleCreate, db: Session = Depends(get_db)):
-    if body.category not in ALLOWED_CATEGORIES:
+    if not db.query(Category).filter(Category.name == body.category).first():
         raise HTTPException(status_code=422, detail=f"Unknown category: {body.category!r}")
     if body.importer not in IMPORTERS:
         raise HTTPException(status_code=422, detail=f"Unknown importer: {body.importer!r}")
