@@ -201,6 +201,8 @@ erDiagram
         string   filename
         int      rows_seen
         int      rows_persisted
+        int      rows_skipped
+        string   content_hash
         datetime loaded_at
         int      account_id   FK
         string   importer
@@ -231,6 +233,7 @@ erDiagram
         string   model_category
         int      model_confidence
         bool     user_modified_category
+        string   dedup_hash
         int      file_id               FK
         datetime created_at
     }

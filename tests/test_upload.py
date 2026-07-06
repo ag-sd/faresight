@@ -63,6 +63,8 @@ def test_import_bulk_transactions_saved_to_db(client):
 
 
 def test_import_bulk_multiple_files(client):
+    """Identical bytes twice in one request: the second file is an exact
+    duplicate and is short-circuited by the re-import guard."""
     acct = _make_account(client)
     csv_bytes = SAMPLE_CSV.read_bytes()
     r = client.post(
@@ -79,7 +81,8 @@ def test_import_bulk_multiple_files(client):
     assert results[0]["filename"] == "jan.csv"
     assert results[1]["filename"] == "feb.csv"
     assert results[0]["imported"] == 13
-    assert results[1]["imported"] == 13  # no dedup — all rows imported again
+    assert results[1]["imported"] == 0
+    assert results[1]["duplicate_file"] is True
 
 
 
@@ -248,25 +251,27 @@ def test_import_creates_file_import_record(client):
     assert r.loaded_at is not None
 
 
-def test_reimport_creates_second_record(client):
+def test_reimport_short_circuits_without_second_record(client):
+    """Re-uploading identical bytes is caught by the file-hash guard: no new
+    FileImport row, no new transactions."""
     from app.models import FileImport
     from tests.conftest import TestingSession
 
     acct = _make_account(client)
     csv_bytes = SAMPLE_CSV.read_bytes()
     for _ in range(2):
-        client.post(
+        r = client.post(
             "/api/transactions/import-bulk",
             data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
             files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
         )
+    assert r.json()[0]["duplicate_file"] is True
     db = TestingSession()
     records = db.query(FileImport).order_by(FileImport.id).all()
     db.close()
-    assert len(records) == 2
+    assert len(records) == 1
     assert records[0].rows_persisted == 13
-    assert records[1].rows_seen == 13
-    assert records[1].rows_persisted == 13
+    assert client.get("/api/transactions").json()["total"] == 13
 
 
 def test_multi_file_import_creates_one_record_per_file(client):
@@ -274,13 +279,20 @@ def test_multi_file_import_creates_one_record_per_file(client):
     from tests.conftest import TestingSession
 
     acct = _make_account(client)
-    csv_bytes = SAMPLE_CSV.read_bytes()
+    jan_csv = (
+        b"Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit\n"
+        b"2026-01-05,2026-01-06,1234,Coffee,Dining,5.00,\n"
+    )
+    feb_csv = (
+        b"Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit\n"
+        b"2026-02-05,2026-02-06,1234,Groceries,Food,42.00,\n"
+    )
     client.post(
         "/api/transactions/import-bulk",
         data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
         files=[
-            ("files", ("jan.csv", csv_bytes, "text/csv")),
-            ("files", ("feb.csv", csv_bytes, "text/csv")),
+            ("files", ("jan.csv", jan_csv, "text/csv")),
+            ("files", ("feb.csv", feb_csv, "text/csv")),
         ],
     )
     db = TestingSession()
@@ -315,16 +327,23 @@ def test_partial_error_rows_seen_includes_bad_rows(client):
 
 def test_get_file_imports_endpoint(client):
     acct = _make_account(client)
-    csv_bytes = SAMPLE_CSV.read_bytes()
-    client.post(
-        "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
-        files=[("files", ("first.csv", csv_bytes, "text/csv"))],
+    first_csv = (
+        b"Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit\n"
+        b"2026-01-05,2026-01-06,1234,Coffee,Dining,5.00,\n"
+    )
+    second_csv = (
+        b"Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit\n"
+        b"2026-02-05,2026-02-06,1234,Groceries,Food,42.00,\n"
     )
     client.post(
         "/api/transactions/import-bulk",
         data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
-        files=[("files", ("second.csv", csv_bytes, "text/csv"))],
+        files=[("files", ("first.csv", first_csv, "text/csv"))],
+    )
+    client.post(
+        "/api/transactions/import-bulk",
+        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        files=[("files", ("second.csv", second_csv, "text/csv"))],
     )
     r = client.get("/api/file-imports")
     assert r.status_code == 200
@@ -342,11 +361,12 @@ def test_get_file_imports_endpoint(client):
 
 def test_file_imports_pagination(client):
     acct = _make_account(client)
-    one_row_csv = (
-        b"Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit\n"
-        b"2026-01-01,2026-01-02,1234,Coffee,Food,5.00,\n"
-    )
     for i in range(26):
+        # Unique content per file so the exact-duplicate guard doesn't skip them.
+        one_row_csv = (
+            b"Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit\n"
+            + f"2026-01-01,2026-01-02,1234,Coffee {i},Food,5.00,\n".encode()
+        )
         client.post(
             "/api/transactions/import-bulk",
             data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},

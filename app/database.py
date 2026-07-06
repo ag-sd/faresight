@@ -1,3 +1,5 @@
+from datetime import date
+
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -101,10 +103,35 @@ def migrate_db() -> None:
             "WHERE model_category = 'Transfers & Fees' AND user_modified_category = 0"
         ))
 
-        # Drop hash_code (idempotency removed) and its unique index.
+        # Drop hash_code (first idempotency attempt, removed) and its unique
+        # index — a UNIQUE hash rejects legitimate duplicate transactions.
         if "hash_code" in tx_existing:
             conn.execute(text("DROP INDEX IF EXISTS ix_transactions_hash_code"))
             conn.execute(text("ALTER TABLE transactions DROP COLUMN hash_code"))
+
+        # Re-import dedupe identity (occurrence-counting, so NOT unique).
+        # Deliberately named dedup_hash: the hash_code block above deletes that
+        # name on every boot.
+        if "dedup_hash" not in tx_existing:
+            conn.execute(text("ALTER TABLE transactions ADD COLUMN dedup_hash VARCHAR(64)"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_transactions_dedup_hash ON transactions(dedup_hash)"
+        ))
+
+        # Backfill legacy rows so pre-existing history participates in dedupe.
+        # Idempotent via the IS NULL filter.
+        from app.models import dedup_hash_for  # deferred: models imports Base from here
+
+        legacy = conn.execute(text(
+            "SELECT id, account_id, date, description, amount FROM transactions "
+            "WHERE dedup_hash IS NULL"
+        )).fetchall()
+        for row_id, account_id, tx_date, description, amount in legacy:
+            conn.execute(
+                text("UPDATE transactions SET dedup_hash = :h WHERE id = :id"),
+                {"h": dedup_hash_for(account_id, date.fromisoformat(str(tx_date)[:10]), description, amount),
+                 "id": row_id},
+            )
 
         if "note" in tx_existing:
             conn.execute(text("ALTER TABLE transactions DROP COLUMN note"))
@@ -127,6 +154,14 @@ def migrate_db() -> None:
 
         if "importer" not in fi_existing:
             conn.execute(text("ALTER TABLE file_imports ADD COLUMN importer VARCHAR(100)"))
+
+        if "content_hash" not in fi_existing:
+            conn.execute(text("ALTER TABLE file_imports ADD COLUMN content_hash VARCHAR(64)"))
+
+        if "rows_skipped" not in fi_existing:
+            conn.execute(text(
+                "ALTER TABLE file_imports ADD COLUMN rows_skipped INTEGER NOT NULL DEFAULT 0"
+            ))
 
         # ── transaction_classification_rules ──────────────────────────────────
         # Drop-and-recreate to enforce the UNIQUE constraint on (description, category, importer).

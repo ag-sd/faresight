@@ -188,27 +188,14 @@ lock_warning in _status only, decide whether it needs force or a stale lock).
 Full suite green. Summarize behavior changes and new tests.
 
 
-Loading tables should use a spinner
 Eventually make categories configurable and db driven. Rules table shows same coloring of category as other pills
 Categorizer should categorize from most recent to oldest
-
-Readme and claude.md are not updated yet
-
-Upload enhancements
-improve import UX to drop multiple files and chose a account and loader per file
-
-AI classifier enhancements
-In pending AI categorization, show a list of transactions pending categorization so that the user may edit them as well.
-Add a rules list to the AI classifier
-Classification rules  to be tabbed
-
-
 
 
 Upgrade to FA 7
 
 Fable
-For my expense tracker app that captures bank activity and cc transaction activity, suggest what widgets / charts / views can be added to dashboard page to show
+For this expense tracker app that captures bank activity and cc transaction activity, suggest what widgets / charts / views can be added to dashboard page to show
 insightful trends to give me an overview into my finances.
 - net worth badge
 - net worth over time
@@ -218,6 +205,28 @@ insightful trends to give me an overview into my finances.
 - Average interest rate
 - Average growth rate
 
+You're missing for some of your asks:
+- No historical balance series. current_balance is one scalar per account — it gets overwritten by the latest snapshot. "Net worth over time" and "growth rate" need a time series. You either reconstruct it from transactions (running balance backward from today's snapshot) or add a balance_history table that logs each BalanceSnapshot. I'd recommend the latter — it's cheap and makes every trend chart trivial.
+- No interest/APR field. "Average interest rate" can't be computed from balances alone. Two paths: (a) add an apr field to Account, or (b) derive realized interest from transactions categorized as Interest (both interest earned on savings and interest charged on cards). Derived is more honest — it shows what you actually paid/earned, not the nominal rate.
+
+What YNAB & Monarch actually give you (worth stealing)
+
+- Monarch: net worth trend as the hero chart; cash flow (income vs. expense bars per month with a net line); "spending vs. last month" comparison; category rollups with sparklines; recurring/subscription detection.
+- YNAB: "Age of Money," spending breakdown, and income vs. expense framing over budgeting-category framing.
+
+The two highest-signal ideas to steal for your app (which is a tracker, not a budgeter):
+1. Cash flow chart — income vs. spending bars per month with a net-savings line. This is the single most insightful overview widget and you can build it today from signed transaction sums.
+2. Recurring/subscription detector — group by normalized description + rough cadence. High "huh, I forgot about that" value.
+
+Recommended dashboard layout
+
+Top row — badges: Net Worth (with MoM delta) · This Month's Spend (vs. last month) · This Month's Income · Savings Rate (income−spend / income).
+
+Hero: Net worth over time (area/line), account-type toggle (assets vs. liabilities).
+
+Middle: Cash flow bars (income vs. expense per month + net line) · Spending-by-category donut for the selected month.
+
+Lower: Top merchants / top categories this month · Recurring charges list · per-card utilization (balance ÷ implied limit, if you ever capture limits).
 
 ----
 

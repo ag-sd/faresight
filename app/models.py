@@ -1,4 +1,5 @@
 import enum
+import hashlib
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Optional
@@ -37,10 +38,26 @@ class Transaction(Base):
     model_category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     model_confidence: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=-1)
     user_modified_category: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Immutable import-identity hash (see dedup_hash_for). Stamped at insert
+    # time and never recomputed on edit, so re-importing a bank file cannot
+    # re-insert a row the user has since modified. Non-unique on purpose:
+    # legitimate duplicates exist (two identical bus fares in one day) —
+    # re-import idempotency uses occurrence counting, not a constraint.
+    dedup_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     file_id: Mapped[int] = mapped_column(Integer, ForeignKey("file_imports.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
+
+
+def dedup_hash_for(account_id: Optional[int], tx_date: date, description: str, amount: float) -> str:
+    """Canonical content identity of a transaction, shared by the import path,
+    manual creation, and the migration backfill. Amount is formatted to two
+    decimals so float repr noise never splits identities. Limitation: if the
+    bank rewords a description between exports (pending → posted), the row
+    re-imports as new — unavoidable without bank transaction IDs."""
+    key = f"{account_id}|{tx_date.isoformat()}|{description}|{amount:.2f}"
+    return hashlib.sha256(key.encode()).hexdigest()
 
 
 class Account(Base):
@@ -73,6 +90,10 @@ class FileImport(Base):
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     rows_seen: Mapped[int] = mapped_column(Integer, nullable=False)
     rows_persisted: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Rows dropped by the re-import dedupe guard: rows_seen = persisted + errors + skipped.
+    rows_skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # SHA-256 of the raw uploaded bytes — exact-file re-upload short-circuit.
+    content_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     loaded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     account_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)
     importer: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)

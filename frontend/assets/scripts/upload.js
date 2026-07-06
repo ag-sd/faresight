@@ -176,15 +176,22 @@ async function doUpload() {
 // ── Result modal ──────────────────────────────────────────────────────────────
 
 function showResultModal(results) {
-  let totalImported = 0, totalErrors = 0;
+  let totalImported = 0, totalErrors = 0, totalSkipped = 0;
 
   const rows = results.map(r => {
     totalImported += r.imported;
     totalErrors += r.errors.length;
+    totalSkipped += r.skipped ?? 0;
 
     const errBadge = r.errors.length > 0
       ? `<span class="badge bg-warning text-dark ms-1">${r.errors.length} error${r.errors.length !== 1 ? 's' : ''}</span>`
       : `<span class="badge bg-success ms-1">0 errors</span>`;
+
+    const dupBadge = r.duplicate_file
+      ? `<span class="badge bg-secondary ms-1">exact duplicate — file skipped</span>`
+      : (r.skipped > 0
+        ? `<span class="badge bg-secondary ms-1">${r.skipped} duplicate${r.skipped !== 1 ? 's' : ''} skipped</span>`
+        : '');
 
     const errDetails = r.errors.length > 0
       ? `<details class="mt-2 ps-4">
@@ -198,6 +205,7 @@ function showResultModal(results) {
         <i class="fa-regular fa-file text-muted flex-shrink-0"></i>
         <span class="flex-grow-1 text-truncate fw-medium">${esc(r.filename)}</span>
         <span class="badge bg-primary">${r.imported} imported</span>
+        ${dupBadge}
         ${errBadge}
       </div>
       ${errDetails}
@@ -208,6 +216,7 @@ function showResultModal(results) {
   document.getElementById('resultSummary').textContent =
     `${results.length} file${results.length !== 1 ? 's' : ''} processed — ` +
     `${totalImported} transaction${totalImported !== 1 ? 's' : ''} imported, ` +
+    `${totalSkipped} duplicate${totalSkipped !== 1 ? 's' : ''} skipped, ` +
     `${totalErrors} error${totalErrors !== 1 ? 's' : ''}.`;
 
   new bootstrap.Modal(document.getElementById('resultModal')).show();
@@ -290,6 +299,7 @@ function initImportTable(accountMap) {
       },
       { title: 'Rows Seen',     field: 'rows_seen',      hozAlign: 'right', width: 120 },
       { title: 'Rows Imported', field: 'rows_persisted', hozAlign: 'right', width: 140 },
+      { title: 'Duplicates',    field: 'rows_skipped',   hozAlign: 'right', width: 120 },
       {
         title: 'Loaded At', field: 'loaded_at', width: 200,
         formatter: (cell) => new Date(cell.getValue()).toLocaleString(),

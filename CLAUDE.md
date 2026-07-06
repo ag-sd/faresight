@@ -165,9 +165,22 @@ Importers subclass `CsvImporter[C]` and implement one method:
   the file literally states (e.g. a `Balance` column). Returned via the
   `balance_snapshot(ctx)` hook; most importers return `None`.
 
-`import_bulk` applies **snapshots only** to `account.current_balance` (idempotent,
-set-to-latest). Applying `net_delta` to `current_balance` is **not implemented yet** —
-it needs a re-import dedupe guard (via the `FileImport` log) to avoid double-counting.
+`import_bulk` applies snapshots to `account.current_balance` when present (authoritative,
+set-to-latest). For snapshot-less files (credit cards) it accumulates the sum of the rows
+**actually inserted** after dedupe — never `result.net_delta`, which ignores dedupe.
+
+**Import idempotency (`import_bulk` + `_dedupe_rows` in `app/routers/transactions.py`)** —
+two layers, both required because legitimate duplicate transactions exist (same
+account/day/vendor/amount, e.g. two bus fares) so **no uniqueness constraint is possible**:
+- **Layer 1 — exact file:** SHA-256 of the raw bytes in `FileImport.content_hash`; a
+  re-upload of identical bytes to the same account (prior `rows_persisted > 0`) is
+  short-circuited with `duplicate_file: true` and no new `FileImport` row.
+- **Layer 2 — occurrence counting:** each row gets `Transaction.dedup_hash`
+  (`dedup_hash_for()` in `app/models.py`: SHA-256 of `account_id|date|description|amount`,
+  **non-unique** index). Per hash, only file-count − DB-count copies insert. The hash is
+  stamped at insert (imports *and* manual `POST /api/transactions`) and never recomputed on
+  edit. A previous attempt (`hash_code` + unique index) was reverted; `migrate_db()` still
+  drops that column — do not reuse the name.
 
 ## Transaction categorization (`app/categorizer.py`)
 
@@ -207,5 +220,3 @@ down, the rows stay at `-1` and are retried next cycle.
 ## What is NOT implemented yet
 
 - Date-range filtering on the transactions endpoint
-- Applying `ImportResult.net_delta` to `account.current_balance` (needs a
-  re-import idempotency guard first; snapshots are already applied)

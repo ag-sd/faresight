@@ -93,6 +93,7 @@ class FileImportOut(BaseModel):
     filename: str
     rows_seen: int
     rows_persisted: int
+    rows_skipped: int = 0
     loaded_at: datetime
     account_id: Optional[int] = None
     importer: Optional[str] = None
