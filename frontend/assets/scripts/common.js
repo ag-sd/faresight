@@ -115,6 +115,7 @@ async function goOffline() {
 
 // ── Rules ─────────────────────────────────────────────────────────────────────
 async function openCreateRuleModal() {
+  document.getElementById('ruleError').classList.add('d-none');
   document.getElementById('ruleDescription').value =
     document.getElementById('editTxDescription').textContent;
 
@@ -132,15 +133,25 @@ async function openCreateRuleModal() {
 }
 
 async function saveRule() {
-  await api('/api/rules', {
-    method: 'POST',
-    body: JSON.stringify({
-      description: document.getElementById('ruleDescription').value,
-      category:    document.getElementById('ruleCategory').value,
-      importer:    document.getElementById('ruleImporter').value,
-    }),
-  });
-  bootstrap.Modal.getInstance(document.getElementById('createRuleModal')).hide();
+  const errEl = document.getElementById('ruleError');
+  errEl.classList.add('d-none');
+  try {
+    await api('/api/rules', {
+      method: 'POST',
+      body: JSON.stringify({
+        description: document.getElementById('ruleDescription').value,
+        category:    document.getElementById('ruleCategory').value,
+        importer:    document.getElementById('ruleImporter').value,
+      }),
+    });
+    bootstrap.Modal.getInstance(document.getElementById('createRuleModal')).hide();
+  } catch (err) {
+    const msg = err.message.includes('already exists')
+      ? 'This exact rule already exists.'
+      : 'Failed to save rule: ' + err.message;
+    errEl.textContent = msg;
+    errEl.classList.remove('d-none');
+  }
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

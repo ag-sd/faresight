@@ -161,7 +161,7 @@ def test_import_bulk_errors_do_not_block_other_files(client):
 # ── Categorization wiring ─────────────────────────────────────────────────────
 
 def test_import_bulk_marks_transactions_pending(client):
-    """Regular rows are pending; payment rows are pre-classified as Payments."""
+    """All imported rows start pending — classification is handled by the rules system."""
     acct = _make_account(client)
     csv_bytes = SAMPLE_CSV.read_bytes()
     client.post(
@@ -170,12 +170,9 @@ def test_import_bulk_marks_transactions_pending(client):
         files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
     )
     txs = client.get("/api/transactions?limit=100").json()["data"]
-    regular = [tx for tx in txs if tx["model_category"] != "Payments"]
-    payments = [tx for tx in txs if tx["model_category"] == "Payments"]
     assert len(txs) == 13
-    assert all(tx["model_confidence"] is None for tx in regular)
-    assert len(payments) == 2
-    assert all(tx["model_confidence"] == 10 for tx in payments)
+    assert all(tx["model_confidence"] is None for tx in txs)
+    assert all(tx["model_category"] is None for tx in txs)
 
 
 # ── GET /api/categorizer/status ───────────────────────────────────────────────
@@ -188,7 +185,7 @@ def test_categorizer_status_empty(client):
 
 
 def test_categorizer_status_after_import(client):
-    """Regular rows are pending; payment rows (pre-classified) count as categorized."""
+    """All imported rows start pending — payment classification is handled by rules, not the importer."""
     acct = _make_account(client)
     csv_bytes = SAMPLE_CSV.read_bytes()
     client.post(
@@ -197,8 +194,8 @@ def test_categorizer_status_after_import(client):
         files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
     )
     r = client.get("/api/categorizer/status").json()
-    assert r["pending"] == 11    # 13 rows minus 2 payment rows
-    assert r["categorized"] == 2  # the 2 CAPITAL ONE MOBILE PYMT rows
+    assert r["pending"] == 13
+    assert r["categorized"] == 0
 
 
 def test_categorizer_status_after_categorization(client):
@@ -223,9 +220,9 @@ def test_categorizer_status_after_categorization(client):
     db.close()
 
     r = client.get("/api/categorizer/status").json()
-    # ids 6-9 (4) + ids 11-13 (3) = 7 pending; ids 1-5 (5) + id 10 (payment) = 6 categorized
-    assert r["pending"] == 7
-    assert r["categorized"] == 6
+    # ids 1-5 updated to confidence=7 → categorized; ids 6-13 still pending
+    assert r["pending"] == 8
+    assert r["categorized"] == 5
 
 
 # ── FileImport log ────────────────────────────────────────────────────────────

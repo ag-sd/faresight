@@ -232,7 +232,7 @@ async function loadRules() {
       <td class="text-end">
         <div class="btn-group btn-group-sm">
           <button class="btn btn-outline-primary" onclick="applyRule(${r.id})">
-            <i class="fa-regular fa-play me-1"></i>Run Now
+            <i class="fa-solid fa-play me-1"></i>Run Now
           </button>
           <button class="btn btn-outline-danger" onclick="deleteRule(${r.id})">
             <i class="fa-regular fa-trash-can"></i>

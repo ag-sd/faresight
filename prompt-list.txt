@@ -187,21 +187,32 @@ lock_warning in _status only, decide whether it needs force or a stale lock).
 ## Done
 Full suite green. Summarize behavior changes and new tests.
 
+
+Loading tables should use a spinner
+Eventually make categories configurable and db driven. Rules table shows same coloring of category as other pills
+Categorizer should categorize from most recent to oldest
+
+Readme and claude.md are not updated yet
+
+Upload enhancements
+improve import UX to drop multiple files and chose a account and loader per file
+
 AI classifier enhancements
 In pending AI categorization, show a list of transactions pending categorization so that the user may edit them as well.
 Add a rules list to the AI classifier
+Classification rules and recent uploads to be tabbed
+Recent Uploads to be capitalized. Classification rules to be called pre-classification rules
 
 
+Importers
 There is a lot of commonality in the importers logic. Lets make them an ABC that does the standard tasks and the importers override to their custom spec.
-The ABC can take care of preclassifying etc.
-
-
-If you want a native, app-like experience without making your users use the terminal to launch a Python script, you should wrap your FastAPI + Jinja2 app into a standalone desktop executable.Tools like PyInstaller or Briefcase can package Python, Uvicorn, FastAPI, and your Jinja2 templates into a single .exe or .app file. When the user double-clicks it, it launches the FastAPI server in the background and opens their default browser to http://127.0.0.1:8000 automatically.
+The ABC can take care of preclassifying etc. Is this needed?
 
 
 
 
-Categorizer should categorize from most recent to oldest
+
+
 
 lets also show Checking/Savings transactions to Accounts tab, under Account Activity. follow consistent pagination rules. Remove the ability to add a CC on the accounts page. Only show
 Checking/Savings accounts on the accounts page. Make accounts and transfers card collapsible and all account transactions in a card with a table below it. Move add button to the account and transaction card and remove the

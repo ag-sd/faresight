@@ -129,13 +129,17 @@ def migrate_db() -> None:
             conn.execute(text("ALTER TABLE file_imports ADD COLUMN importer VARCHAR(100)"))
 
         # ── transaction_classification_rules ──────────────────────────────────
+        # Drop-and-recreate to enforce the UNIQUE constraint on (description, category, importer).
+        # SQLite cannot ADD CONSTRAINT to an existing table, so we clear and rebuild.
+        conn.execute(text("DROP TABLE IF EXISTS transaction_classification_rules"))
         conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS transaction_classification_rules (
-                id INTEGER PRIMARY KEY,
+            CREATE TABLE transaction_classification_rules (
+                id          INTEGER PRIMARY KEY,
                 description VARCHAR(255) NOT NULL,
-                category VARCHAR(100) NOT NULL,
-                importer VARCHAR(100) NOT NULL,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                category    VARCHAR(100) NOT NULL,
+                importer    VARCHAR(100) NOT NULL,
+                created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (description, category, importer)
             )
         """))
 

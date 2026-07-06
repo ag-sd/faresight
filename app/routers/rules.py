@@ -2,6 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.categorizer import ALLOWED_CATEGORIES
@@ -29,7 +30,14 @@ def create_rule(body: RuleCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=422, detail=f"Unknown importer: {body.importer!r}")
     rule = Rule(**body.model_dump())
     db.add(rule)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="A rule for this exact description, category, and importer already exists.",
+        )
     db.refresh(rule)
     return rule
 

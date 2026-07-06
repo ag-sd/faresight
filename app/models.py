@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     from app.schemas import TransactionCreate
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -80,6 +80,7 @@ class FileImport(Base):
 
 class Rule(Base):
     __tablename__ = "transaction_classification_rules"
+    __table_args__ = (UniqueConstraint("description", "category", "importer"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     description: Mapped[str] = mapped_column(String(255), nullable=False)

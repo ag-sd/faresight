@@ -74,6 +74,13 @@ def test_create_rule_unknown_importer(client):
     assert r.status_code == 422
 
 
+def test_create_rule_duplicate(client):
+    client.post("/api/rules", json=VALID_RULE)
+    r = client.post("/api/rules", json=VALID_RULE)
+    assert r.status_code == 409
+    assert "already exists" in r.json()["detail"]
+
+
 def test_create_rule_all_allowed_categories(client):
     from app.categorizer import ALLOWED_CATEGORIES
     for category in ALLOWED_CATEGORIES:

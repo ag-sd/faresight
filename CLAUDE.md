@@ -33,9 +33,10 @@ uvicorn app.faresight:app --reload
 Routes are split into routers under `app/routers/`:
 - `app/routers/transactions.py` — CRUD + summary/chart endpoints + CSV import (`/api/transactions`, `/api/summary/*`, `/api/categories`)
 - `app/routers/accounts.py` — account management (`/api/accounts`, `/api/accounts/bank-logos`)
+- `app/routers/rules.py` — classification rules CRUD + retroactive apply (`/api/rules`)
 - `app/routers/sync.py` — NAS sync control (`/api/sync`, `/api/sync/status`, `/api/sync/go-offline`)
 
-.`app/faresight.py` wires the routers, mounts `/static → frontend/`, handles the lifespan (DB creation → `migrate_db()` → `sync_from_nas()` → periodic sync loop + categorization loop → shutdown push), and serves the two HTML pages at `/` and `/accounts`.
+`app/faresight.py` wires the routers, mounts `/static → frontend/`, handles the lifespan (DB creation → `migrate_db()` → `sync_from_nas()` → periodic sync loop + categorization loop → shutdown push), and serves the three HTML pages at `/`, `/accounts`, and `/upload`.
 
 **Schema migrations** are handled by `migrate_db()` in `app/database.py` — raw `ALTER TABLE` / `RENAME COLUMN` SQL against the live SQLite file. Add new migrations there when adding columns to existing tables.
 
@@ -46,14 +47,28 @@ Routes are split into routers under `app/routers/`:
 - `app/models.py` — `Transaction` and `Account` tables; `AccountType` and `SourceFrequency` enums
 - `app/schemas.py` — Pydantic schemas for all request/response types
 - `app/sync.py` — full NAS sync state machine; see NAS sync section below
-- `frontend/assets/scripts/app.js` — all frontend JavaScript
+- `frontend/assets/scripts/common.js` — shared JS (API helper, NAS banners, category colours, rules modals)
+- `frontend/assets/scripts/app.js` — dashboard-specific JS (transactions table, charts)
+- `frontend/assets/scripts/upload.js` — upload-page JS (dropzone, importer, rules table)
 - `frontend/app/pages/index.html` — main dashboard (transactions + charts)
 - `frontend/app/pages/accounts.html` — accounts management page
+- `frontend/app/pages/upload.html` — CSV upload + classification rules page
 
 ## Frontend libraries
 
-- **Font Awesome 6 free** (6.7.2) via jsDelivr CDN — included in all pages.
-  Always use the `fa-regular` prefix (e.g. `fa-regular fa-pen-to-square`). Never use `fa-solid` or `fa-light`.
+All loaded via jsDelivr CDN — no local copies.
+
+| Library | Version | Notes |
+|---|---|---|
+| Bootstrap | 5.3.3 | CSS framework + JS bundle (modals, collapse, etc.) |
+| Font Awesome Free | 6.7.2 | Icons — see rules below |
+| Chart.js | 4 | Charts on the dashboard |
+| Tabulator | 6.3.0 | Sortable/paginated data tables |
+
+**Font Awesome Free icon rules:**  
+FA 6 Free ships three styles: `fa-solid` (most icons), `fa-regular` (a small subset), and `fa-brands`.  
+Prefer `fa-regular` where the icon exists in that weight. Use `fa-solid` when it does not (e.g. `fa-play` is solid-only in the free set).  
+Never use `fa-light`, `fa-thin`, or `fa-duotone` — those are Pro-only and will render nothing.
 
 ## Development rules
 

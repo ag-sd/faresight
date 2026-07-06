@@ -5,37 +5,59 @@ with a FastAPI backend and a plain HTML/JS/Chart.js frontend.
 
 ## Stack
 
-| Layer    | Technology                              |
-|----------|-----------------------------------------|
-| Backend  | Python · FastAPI · SQLAlchemy 2         |
-| Database | SQLite (local file, path from config)   |
-| Frontend | Bootstrap 5.3 + Vanilla JS + Chart.js 4 |
+| Layer    | Technology                                                          |
+|----------|---------------------------------------------------------------------|
+| Backend  | Python · FastAPI · SQLAlchemy 2                                     |
+| Database | SQLite (local file, WAL mode)                                       |
+| Frontend | Bootstrap 5.3 · Vanilla JS · Chart.js 4 · Tabulator 6 · FA Free 6 |
 
 ## Project layout
 
 ```
 faresight/
 ├── app/
-│   ├── faresight.py   # FastAPI app — routes for transactions + summaries
-│   ├── database.py    # SQLAlchemy engine (local SQLite path from config)
-│   ├── models.py      # Transaction ORM model
-│   ├── schemas.py     # Pydantic request/response schemas
-│   ├── config.py      # Reads config.yaml into typed constants
-│   ├── nas.py         # NAS sync stubs (not yet implemented)
-│   └── sync.py        # NAS sync implementation (startup pull, periodic push, lock file)
+│   ├── faresight.py       # FastAPI app wiring — routers, lifespan, HTML routes
+│   ├── database.py        # SQLAlchemy engine + migrate_db()
+│   ├── models.py          # ORM models: Transaction, Account, FileImport, Rule
+│   ├── schemas.py         # Pydantic request/response schemas
+│   ├── config.py          # Reads config.yaml into typed constants
+│   ├── sync.py            # NAS sync state machine (startup pull, periodic push, lock file)
+│   ├── categorizer.py     # Background AI categorization worker (Ollama)
+│   ├── routers/
+│   │   ├── transactions.py  # /api/transactions, /api/summary/*, /api/categories
+│   │   ├── accounts.py      # /api/accounts, /api/accounts/bank-logos
+│   │   ├── rules.py         # /api/rules (classification rules CRUD + apply)
+│   │   └── sync.py          # /api/sync, /api/sync/status, /api/sync/go-offline
+│   └── importers/
+│       ├── __init__.py      # IMPORTERS registry
+│       └── *.py             # One module per bank format
 ├── frontend/
 │   ├── assets/
-│   │   ├── css/
-│   │   │   └── app.css       # Custom CSS (chart container height, tabular-nums)
-│   │   └── scripts/
-│   │       └── app.js        # All frontend JavaScript
-│   └── app/
-│       └── pages/
-│           └── index.html    # Dashboard HTML (Bootstrap 5.3 + Chart.js via CDN)
-├── config.yaml        # App configuration
-├── dev.sh             # Start / stop / status helper (works from any shell)
+│   │   ├── css/app.css
+│   │   ├── scripts/
+│   │   │   ├── common.js    # Shared: API helper, NAS banners, category colours, rule modals
+│   │   │   ├── app.js       # Dashboard: transactions table, charts
+│   │   │   └── upload.js    # Upload page: dropzone, importer select, rules table
+│   │   └── templates/partials/   # Jinja2 partials (modals shared across pages)
+│   └── app/pages/
+│       ├── index.html       # Dashboard (transactions + charts)
+│       ├── accounts.html    # Account management
+│       └── upload.html      # CSV upload + classification rules
+├── tests/
+├── config.yaml
 └── requirements.txt
 ```
+
+## Frontend libraries
+
+All loaded via jsDelivr CDN — no local copies.
+
+| Library | Version |
+|---|---|
+| Bootstrap | 5.3.3 |
+| Font Awesome Free | 6.7.2 |
+| Chart.js | 4 |
+| Tabulator | 6.3.0 |
 
 ## Quick start
 
@@ -107,14 +129,16 @@ Interactive docs at http://localhost:8000/docs.
 
 ## Transaction fields
 
-| Field         | Type     | Required | Notes                              |
-|---------------|----------|----------|------------------------------------|
-| `date`        | date     | yes      | YYYY-MM-DD                         |
-| `description` | string   | yes      |                                    |
-| `amount`      | float    | yes      | Negative = expense, positive = income |
-| `category`    | string   | yes      |                                    |
-| `note`        | string   | no       |                                    |
-| `source`      | string   | no       | e.g. "Visa", "bank transfer"       |
+| Field                   | Type     | Required | Notes                                        |
+|-------------------------|----------|----------|----------------------------------------------|
+| `date`                  | date     | yes      | YYYY-MM-DD                                   |
+| `description`           | string   | yes      |                                              |
+| `amount`                | float    | yes      | Negative = expense, positive = income        |
+| `category`              | string   | yes      | Human-facing category                        |
+| `account_id`            | int      | no       | FK → accounts                                |
+| `model_category`        | string   | no       | AI-suggested category (never overwrites `category`) |
+| `model_confidence`      | int      | no       | 0–10; null = pending AI; 10 = rule-assigned  |
+| `user_modified_category`| bool     | no       | True once the user has manually set a category |
 
 ## Running tests
 
@@ -179,6 +203,7 @@ erDiagram
         int      rows_persisted
         datetime loaded_at
         int      account_id   FK
+        string   importer
     }
 
     accounts {
@@ -210,6 +235,14 @@ erDiagram
         datetime created_at
     }
 
+    transaction_classification_rules {
+        int      id          PK
+        string   description
+        string   category
+        string   importer
+        datetime created_at
+    }
+
     file_imports  ||--o{ transactions : "file_id"
     accounts      |o--o{ transactions : "account_id"
     accounts      |o--o{ accounts     : "source_account_id"
@@ -218,5 +251,4 @@ erDiagram
 
 ## Roadmap
 
-- [ ] CSV import
-- [ ] Date-range filtering
+- [ ] Date-range filtering on the transactions endpoint
