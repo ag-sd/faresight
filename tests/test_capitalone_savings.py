@@ -82,11 +82,12 @@ def test_large_debit_amount(account, sample_bytes):
 def test_account_balance_from_first_row(account, sample_bytes):
     # First row has Balance=151632.53 (most recent)
     result = import_checking_savings_csv(sample_bytes, account)
-    assert result.account_balance == 151632.53
+    assert result.snapshot.amount == 151632.53
 
 
 def test_account_balance_ascending_date_order(account):
     """Ascending-order export: balance must come from the last (newest) row, not the first."""
+    from datetime import date
     csv_bytes = (
         b"Account Number,Transaction Description,Transaction Date,Transaction Type,Transaction Amount,Balance\n"
         b"1543,Old Withdrawal,04/14/26,Debit,65000,129869.66\n"
@@ -94,11 +95,13 @@ def test_account_balance_ascending_date_order(account):
         b"1543,Newest Deposit,06/23/26,Credit,500,151632.53\n"
     )
     result = import_checking_savings_csv(csv_bytes, account)
-    assert result.account_balance == 151632.53
+    assert result.snapshot.amount == 151632.53
+    assert result.snapshot.as_of == date(2026, 6, 23)
 
 
 def test_account_balance_descending_date_order(account):
     """Descending-order export (Capital One default): balance still comes from the newest row."""
+    from datetime import date
     csv_bytes = (
         b"Account Number,Transaction Description,Transaction Date,Transaction Type,Transaction Amount,Balance\n"
         b"1543,Newest Deposit,06/23/26,Credit,500,151632.53\n"
@@ -106,13 +109,14 @@ def test_account_balance_descending_date_order(account):
         b"1543,Old Withdrawal,04/14/26,Debit,65000,129869.66\n"
     )
     result = import_checking_savings_csv(csv_bytes, account)
-    assert result.account_balance == 151632.53
+    assert result.snapshot.amount == 151632.53
+    assert result.snapshot.as_of == date(2026, 6, 23)
 
 
 def test_account_balance_none_on_empty_csv(account):
     csv_bytes = b"Account Number,Transaction Description,Transaction Date,Transaction Type,Transaction Amount,Balance\n"
     result = import_checking_savings_csv(csv_bytes, account)
-    assert result.account_balance is None
+    assert result.snapshot is None
 
 
 # ── Default category ──────────────────────────────────────────────────────────
@@ -165,7 +169,7 @@ def test_partial_success(account):
     result = import_checking_savings_csv(csv_bytes, account)
     assert len(result.transactions) == 2
     assert len(result.errors) == 1
-    assert result.account_balance == 5100.0
+    assert result.snapshot.amount == 5100.0
 
 
 def test_bom_stripped(account):

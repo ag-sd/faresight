@@ -242,7 +242,7 @@ async def import_bulk(
         filename = file.filename
         file_bytes = await file.read()
         try:
-            result = import_fn(file_bytes, account)
+            result = import_fn(file_bytes, account, filename, importer)
         except (UnicodeDecodeError, csv.Error) as exc:
             logger.warning("Parse failed for %r: %s", filename, exc)
             db.add(FileImport(filename=filename, rows_seen=0, rows_persisted=0, account_id=account_id, importer=importer))
@@ -281,8 +281,11 @@ async def import_bulk(
 
         log.rows_persisted = imported
 
-        if result.account_balance is not None:
-            account.current_balance = result.account_balance
+        # Authoritative snapshots are idempotent (set-to-latest), so we apply
+        # them directly. result.net_delta is intentionally NOT written to
+        # current_balance yet — delta accumulation needs a re-import guard first.
+        if result.snapshot is not None:
+            account.current_balance = result.snapshot.amount
 
         results.append({"filename": filename, "imported": imported, "errors": result.errors})
 

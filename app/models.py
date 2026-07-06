@@ -90,7 +90,24 @@ class Rule(Base):
 
 
 @dataclass
+class BalanceSnapshot:
+    """An authoritative account balance stated by the source file (e.g. a
+    checking/savings ``Balance`` column). ``as_of`` arbitrates between snapshots
+    when several files touch the same account — newest wins."""
+    amount: float
+    as_of: date
+
+
+@dataclass
 class ImportResult:
     transactions: list["TransactionCreate"] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
-    account_balance: Optional[float] = None
+    # Net change contributed by this file (sum of transaction amounts). Always
+    # computed. NOT itself a balance — becomes one only when added to a prior.
+    net_delta: float = 0.0
+    # Authoritative balance, present only when the file states one.
+    snapshot: Optional[BalanceSnapshot] = None
+    # Identity of this per-file result, stamped by CsvImporter.run().
+    account_id: Optional[int] = None
+    filename: Optional[str] = None
+    importer: Optional[str] = None

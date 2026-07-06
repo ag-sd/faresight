@@ -204,22 +204,11 @@ Classification rules and recent uploads to be tabbed
 Recent Uploads to be capitalized. Classification rules to be called pre-classification rules
 
 
-Importers
-There is a lot of commonality in the importers logic. Lets make them an ABC that does the standard tasks and the importers override to their custom spec.
-The ABC can take care of preclassifying etc. Is this needed?
+Create a new page called Expenses. Add only CC activity and accounts to Expenses page. Follow the exact design of the Accounts page
+but restrict all accounts and transactions to credit card related. Then rename the accounts page to Income and update all the endpoints and other interaction
+break these changes out into multiple phases so we can go thru them in steps
 
-
-
-
-
-
-
-lets also show Checking/Savings transactions to Accounts tab, under Account Activity. follow consistent pagination rules. Remove the ability to add a CC on the accounts page. Only show
-Checking/Savings accounts on the accounts page. Make accounts and transfers card collapsible and all account transactions in a card with a table below it. Move add button to the account and transaction card and remove the
-account summary widget at the top.
-
-Create a new page called Expenses. Add CC activity to Expenses page. Add a CC table above it. Make the CC table collapsible. Add Button to
-Add new CC in the table
+Upgrade to FA 7
 
 
 

@@ -40,6 +40,29 @@ def test_account_id_set_on_all_rows(account, sample_bytes):
     assert all(tx.account_id == account.id for tx in result.transactions)
 
 
+# ── net_delta (credit card carries no authoritative balance) ─────────────────
+
+def test_no_snapshot_for_credit_card(account, sample_bytes):
+    result = import_credit_card_csv(sample_bytes, account)
+    assert result.snapshot is None
+
+
+def test_net_delta_is_rounded_sum_of_amounts(account, sample_bytes):
+    result = import_credit_card_csv(sample_bytes, account)
+    assert result.net_delta == round(sum(tx.amount for tx in result.transactions), 2)
+
+
+def test_net_delta_known_values(account):
+    csv_bytes = (
+        b"Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit\n"
+        b"2026-01-01,2026-01-02,1234,Coffee,Dining,5.00,\n"       # -5.00
+        b"2026-01-03,2026-01-04,1234,Refund,Dining,,25.00\n"      # +25.00
+        b"2026-01-05,2026-01-06,1234,Lunch,Dining,10.50,\n"       # -10.50
+    )
+    result = import_credit_card_csv(csv_bytes, account)
+    assert result.net_delta == 9.5
+
+
 # ── Debit → negative amount ───────────────────────────────────────────────────
 
 def test_debit_row_is_negative(account, sample_bytes):

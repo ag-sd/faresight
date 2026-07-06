@@ -141,8 +141,33 @@ The `autouse=True` `reset_status` fixture in `tests/test_sync.py` resets all six
 
 - Each bank module lives in `app/importers/<bank>.py` and exports one or more import functions.
 - Import functions are registered by name in `app/importers/__init__.py` — the module itself does **not** own its display name.
-- **Debit columns = negative amounts; credit columns = positive amounts.** This is an invariant across all importers. A debit is a charge the account holder owes; a credit is a payment or refund reducing the balance.
+- **Debit columns = negative amounts; credit columns = positive amounts.** This is an invariant across all importers. A debit is a charge the account holder owes; a credit is a payment or refund reducing the balance. Use `CsvImporter.signed_amount(debit, credit)` (`app/importers/base.py`) rather than re-implementing it.
 - Sample fixture CSVs for each importer live in `tests/` (e.g. `tests/capitalone_sample.csv`).
+
+**`CsvImporter` base class (`app/importers/base.py`) — Template Method.**
+Importers subclass `CsvImporter[C]` and implement one method:
+- `parse_row(row, account, ctx) -> Optional[TransactionCreate]` — map one CSV row.
+  Return `None` to **skip** a row (no error); raise `ValueError`/`KeyError` to record
+  a per-row error (captured as `Row {n}: ...`, `n` is 1-based from the header).
+- The base's `run()` owns the invariant skeleton (decode `utf-8-sig` → `DictReader` →
+  row loop → error capture) and stamps identity (`account_id`, `filename`, `importer`)
+  onto the result. It is reentrant: one instance can import many files.
+- **Per-file state** goes in a fresh *context* from `new_context()` (concrete hook,
+  default `{}`) — override to return a typed dataclass. Threading state through `ctx`
+  (not `self`) keeps `parse_row` pure and unit-testable in isolation.
+- Module-level wrapper functions (`import_*_csv`) instantiate the class and call
+  `run()`; the registry maps display names to these wrappers.
+
+**`ImportResult` balance fields (`app/models.py`)** — two *distinct* concepts:
+- `net_delta` — sum of the file's transaction amounts (a *change*). Always computed by
+  the base. NOT a balance until added to a prior balance.
+- `snapshot: Optional[BalanceSnapshot]` — an authoritative balance (`amount`, `as_of`)
+  the file literally states (e.g. a `Balance` column). Returned via the
+  `balance_snapshot(ctx)` hook; most importers return `None`.
+
+`import_bulk` applies **snapshots only** to `account.current_balance` (idempotent,
+set-to-latest). Applying `net_delta` to `current_balance` is **not implemented yet** —
+it needs a re-import dedupe guard (via the `FileImport` log) to avoid double-counting.
 
 ## Transaction categorization (`app/categorizer.py`)
 
@@ -182,3 +207,5 @@ down, the rows stay at `-1` and are retried next cycle.
 ## What is NOT implemented yet
 
 - Date-range filtering on the transactions endpoint
+- Applying `ImportResult.net_delta` to `account.current_balance` (needs a
+  re-import idempotency guard first; snapshots are already applied)
