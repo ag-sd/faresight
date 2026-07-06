@@ -26,6 +26,7 @@ faresight/
 │   ├── routers/
 │   │   ├── transactions.py  # /api/transactions, /api/summary/*
 │   │   ├── categories.py   # /api/categories (CRUD)
+│   │   ├── insights.py     # /api/insights/* (recurring, trends, merchants)
 │   │   ├── accounts.py      # /api/accounts, /api/accounts/bank-logos
 │   │   ├── rules.py         # /api/rules (classification rules CRUD + apply)
 │   │   └── sync.py          # /api/sync, /api/sync/status, /api/sync/go-offline
@@ -123,7 +124,12 @@ The local DB directory is created automatically on first run.
 | PATCH  | `/api/transactions/{id}`      | Update fields                   |
 | DELETE | `/api/transactions/{id}`      | Delete                          |
 | GET    | `/api/summary/by-category`    | Totals grouped by category      |
-| GET    | `/api/summary/by-month`       | Totals grouped by year+month    |
+| GET    | `/api/summary/by-month`       | Totals grouped by year+month (`?bucket=income\|spend`) |
+| GET    | `/api/summary/cashflow`       | Monthly income/spend/net series |
+| GET    | `/api/summary/badges`         | Net worth + monthly flow + savings rate |
+| GET    | `/api/insights/recurring`     | Detected recurring charges + price changes |
+| GET    | `/api/insights/category-trends` | MoM spend deltas + trailing 3-mo averages |
+| GET    | `/api/insights/top-merchants` | Spend grouped by merchant       |
 | GET    | `/api/categories`             | All categories (CRUD managed)   |
 | POST   | `/api/categories`             | Create a category               |
 | PATCH  | `/api/categories/{name}`      | Update color/bucket/description |
@@ -259,10 +265,19 @@ erDiagram
         int      sort_order
     }
 
+    balance_history {
+        int      id         PK
+        int      account_id FK
+        float    balance
+        date     as_of
+        datetime created_at
+    }
+
     file_imports  ||--o{ transactions : "file_id"
     accounts      |o--o{ transactions : "account_id"
     accounts      |o--o{ accounts     : "source_account_id"
     accounts      |o--o{ file_imports : "account_id"
+    accounts      ||--o{ balance_history : "account_id"
 ```
 
 ## Roadmap

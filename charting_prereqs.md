@@ -56,19 +56,25 @@ Once imports are idempotent, accumulate each file's `net_delta` into `account.cu
 (alongside the existing snapshot path at `transactions.py:291`). This is what gives credit cards a
 balance. Snapshots still win when present (authoritative).
 
-### [ ] P4 — `balance_history` table  · *depends on P3*
-New table `balance_history(id, account_id, balance, as_of, created_at)`; add a migration in
-`migrate_db()` (`app/database.py`, follow the `CREATE TABLE` pattern ~lines 134-144). Log a row on
-each balance change during import. Enables net-worth-over-time and growth rate later, with no rework.
+### [x] P4 — `balance_history` table  · *depends on P3*
+Added `balance_history(id, account_id, balance, as_of, created_at)` (`app/models.py` `BalanceHistory`;
+`CREATE TABLE IF NOT EXISTS` + index in `migrate_db()`). `import_bulk` logs one row via `_log_balance()`
+whenever a balance changes — `as_of` is the snapshot's stated date, or the newest inserted transaction
+for the delta path. No row logged when nothing changes (empty file / idempotent re-import). Table +
+logging only; the read endpoint lands with net-worth charting (out of scope here).
 
-### [ ] P5 — Income-by-month aggregation  · *depends on P1*
-Monthly income series from the `income` bucket, grouped by year/month (mirror `summary_by_month`,
-`transactions.py:145-158`, filtered to the income bucket). This is the "income history by month."
+### [x] P5 — Income-by-month aggregation  · *depends on P1*
+Added a `bucket=income|spend` query param to `GET /api/summary/by-month` (no new endpoint).
+Income is strict (`model_category` in income-bucket names — uncategorized rows are never income);
+spend is NULL-safe (uncategorized counts as spend, consistent with existing charts); bucket
+membership implies internal exclusion. Shared `_bucket_names()` / `_bucket_filter()` helpers in
+`transactions.py`; `_exclude_internal()` refactored onto `_bucket_names()`.
 
-### [ ] P6 — Summary response schemas  · *convention, low effort*
-Add Pydantic schemas in `app/schemas.py` (`CategorySummary`, `MonthlySummary`, `CashFlowPoint`,
-`BadgeSummary`) and wire `response_model=` on endpoints. Matches the `PaginatedTransactions`
-convention. (Optional but keeps the API surface consistent.)
+### [x] P6 — Summary response schemas  · *convention, low effort*
+Added `CategorySummary` and `MonthlySummary` in `app/schemas.py` and wired `response_model=` on the
+four summary endpoints (`by-category`, `by-model-category`, `by-category-for-period` → `CategorySummary`;
+`by-month` → `MonthlySummary`). `CashFlowPoint`/`BadgeSummary` deferred until their endpoints
+(`/api/summary/cashflow`, `/api/summary/badges`) are built — they live in "Out of scope" below.
 
 ---
 
@@ -100,9 +106,15 @@ Import a CapitalOne checking CSV, then a credit-card CSV; confirm both accounts 
 ---
 
 ## Out of scope (charting — tracked for after prerequisites land)
-Do **not** start until P1–P5 are done:
-- Badges row (net worth, monthly spend, income, savings rate) + `GET /api/summary/badges`
-- Cash-flow chart (income vs. expense + net line) + `GET /api/summary/cashflow`
-- Spending-by-category donut / month view (bucket-filtered)
-- Remove the transactions table from the dashboard
-- Deferred further: net worth over time, growth rate, interest widgets
+All prerequisites (P1–P6) are done; charting work is underway:
+- [x] Badges row (net worth, monthly spend, income, savings rate) + `GET /api/summary/badges` —
+  landed with the P5 slice, incl. MoM delta chips and `BadgeSummary` schema
+- [x] Cash-flow chart (income vs. expense + net line) + `GET /api/summary/cashflow` —
+  landed with the P5 slice (`CashFlowPoint` schema; income/spend bars + net line on the dashboard)
+- [x] Insights cards (2026-07-06): recurring/subscription detection with price-increase flags
+  (`/api/insights/recurring`, pure heuristic in `app/insights.py`), MoM top movers + trailing
+  3-mo averages (`/api/insights/category-trends`), top merchants (`/api/insights/top-merchants`)
+- [ ] Spending-by-category donut / month view (bucket-filtered)
+- [x] Remove the transactions table from the dashboard — table, Export CSV, and the
+  edit/rule modals removed from `index.html`/`app.js`; browsing lives on Income/Expenses
+- Deferred further: net worth over time (from `balance_history`), growth rate, interest widgets

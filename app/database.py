@@ -200,4 +200,18 @@ def migrate_db() -> None:
                     "VALUES (:n, :c, :b, :d, :s)"
                 ), {"n": name, "c": color, "b": bucket, "d": desc, "s": i})
 
+        # ── balance_history ─────────────────────────────────────────────────────
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS balance_history (
+                id         INTEGER PRIMARY KEY,
+                account_id INTEGER NOT NULL REFERENCES accounts(id),
+                balance    REAL     NOT NULL,
+                as_of      DATE     NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_balance_history_account_id ON balance_history(account_id)"
+        ))
+
         conn.commit()

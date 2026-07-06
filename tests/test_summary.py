@@ -319,3 +319,139 @@ def test_by_category_excludes_rows_with_transfer_model_category(client):
 
     data = {r["category"]: r["total"] for r in client.get("/api/summary/by-category").json()}
     assert data == {"Food": -50.00}
+
+
+# ── P6: response_model shape conformance ──────────────────────────────────────
+# response_model= coerces the returned dicts; these lock the exact keys/types so a
+# future field rename can't silently drift the API surface.
+
+def test_category_summary_shape(client):
+    make_tx(client, category="Food", amount=-12.34)
+    for path in ("/api/summary/by-category",):
+        row = client.get(path).json()[0]
+        assert set(row) == {"category", "total"}
+        assert isinstance(row["category"], str)
+        assert isinstance(row["total"], float)
+
+
+def test_model_category_summary_shape(client):
+    make_tx(client, model_category="Groceries", model_confidence=8, amount=-9.00, date="2026-01-05")
+    for path in ("/api/summary/by-model-category", "/api/summary/by-category-for-period?year=2026"):
+        row = client.get(path).json()[0]
+        assert set(row) == {"category", "total"}
+        assert isinstance(row["category"], str)
+        assert isinstance(row["total"], float)
+
+
+def test_monthly_summary_shape(client):
+    make_tx(client, date="2026-01-10", amount=-100.00)
+    row = client.get("/api/summary/by-month").json()[0]
+    assert set(row) == {"year", "month", "total"}
+    assert isinstance(row["year"], int)
+    assert isinstance(row["month"], int)
+    assert isinstance(row["total"], float)
+
+
+# ── P5: /api/summary/by-month?bucket= ─────────────────────────────────────────
+
+def _seed_mixed_month(client):
+    """One month of income / spend / internal / uncategorized rows."""
+    make_tx(client, date="2026-01-05", amount=3000.00,
+            model_category="Income", model_confidence=9, description="Payroll")
+    make_tx(client, date="2026-01-31", amount=25.00,
+            model_category="Interest Income", model_confidence=9, description="Interest")
+    make_tx(client, date="2026-01-10", amount=-80.00,
+            model_category="Groceries", model_confidence=8, description="Market")
+    make_tx(client, date="2026-01-15", amount=-500.00,
+            model_category="Payments", model_confidence=10, description="CC payment")
+    make_tx(client, date="2026-01-20", amount=-40.00, description="Uncategorized")
+
+
+def test_by_month_income_bucket_only_income_rows(client):
+    _seed_mixed_month(client)
+    rows = client.get("/api/summary/by-month?bucket=income").json()
+    assert rows == [{"year": 2026, "month": 1, "total": 3025.00}]
+
+
+def test_by_month_income_bucket_excludes_uncategorized(client):
+    # Strict: a NULL model_category row is never income.
+    make_tx(client, date="2026-01-05", amount=1000.00, description="Mystery deposit")
+    assert client.get("/api/summary/by-month?bucket=income").json() == []
+
+
+def test_by_month_spend_bucket_keeps_null_excludes_income_and_internal(client):
+    _seed_mixed_month(client)
+    rows = client.get("/api/summary/by-month?bucket=spend").json()
+    # Groceries −80 + uncategorized −40; income and Payments excluded.
+    assert rows == [{"year": 2026, "month": 1, "total": -120.00}]
+
+
+def test_by_month_custom_income_category_is_picked_up(client):
+    client.post("/api/categories", json={
+        "name": "Dividends", "color": "#aabbcc", "bucket": "income",
+    })
+    make_tx(client, date="2026-03-01", amount=55.00,
+            model_category="Dividends", model_confidence=9)
+    rows = client.get("/api/summary/by-month?bucket=income").json()
+    assert rows == [{"year": 2026, "month": 3, "total": 55.00}]
+
+
+def test_by_month_invalid_bucket_422(client):
+    assert client.get("/api/summary/by-month?bucket=bogus").status_code == 422
+
+
+def test_by_month_income_bucket_spans_months(client):
+    make_tx(client, date="2026-01-05", amount=3000.00,
+            model_category="Income", model_confidence=9, description="Jan payroll")
+    make_tx(client, date="2026-02-05", amount=3100.00,
+            model_category="Income", model_confidence=9, description="Feb payroll")
+    rows = client.get("/api/summary/by-month?bucket=income").json()
+    assert [(r["month"], r["total"]) for r in rows] == [(1, 3000.00), (2, 3100.00)]
+
+
+# ── /api/summary/cashflow ─────────────────────────────────────────────────────
+
+def test_cashflow_empty(client):
+    r = client.get("/api/summary/cashflow")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_cashflow_math_per_month(client):
+    _seed_mixed_month(client)
+    rows = client.get("/api/summary/cashflow").json()
+    assert rows == [{
+        "year": 2026, "month": 1,
+        "income": 3025.00,          # Payroll + Interest
+        "spend": -120.00,           # Groceries + uncategorized; Payments excluded
+        "net": 2905.00,
+    }]
+
+
+def test_cashflow_multiple_months_ordered(client):
+    make_tx(client, date="2025-12-05", amount=2000.00,
+            model_category="Income", model_confidence=9, description="Dec payroll")
+    make_tx(client, date="2026-01-10", amount=-50.00,
+            model_category="Groceries", model_confidence=8)
+    rows = client.get("/api/summary/cashflow").json()
+    assert [(r["year"], r["month"]) for r in rows] == [(2025, 12), (2026, 1)]
+    assert rows[0]["income"] == 2000.00 and rows[0]["spend"] == 0.00
+    assert rows[1]["income"] == 0.00 and rows[1]["spend"] == -50.00
+
+
+def test_cashflow_internal_only_month_nets_zero(client):
+    make_tx(client, date="2026-04-01", amount=500.00,
+            model_category="Payments", model_confidence=10)
+    rows = client.get("/api/summary/cashflow").json()
+    # The month still appears (a transaction exists) but contributes nothing.
+    assert rows == [{"year": 2026, "month": 4, "income": 0.00, "spend": 0.00, "net": 0.00}]
+
+
+def test_cashflow_point_shape(client):
+    make_tx(client, date="2026-01-10", amount=-100.00)
+    row = client.get("/api/summary/cashflow").json()[0]
+    assert set(row) == {"year", "month", "income", "spend", "net"}
+    assert isinstance(row["year"], int)
+    assert isinstance(row["month"], int)
+    for f in ("income", "spend", "net"):
+        assert isinstance(row[f], float)

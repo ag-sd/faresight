@@ -188,7 +188,7 @@ lock_warning in _status only, decide whether it needs force or a stale lock).
 Full suite green. Summarize behavior changes and new tests.
 
 
-Eventually make categories configurable and db driven. Rules table shows same coloring of category as other pills
+Rules table shows same coloring of category as other pills
 Categorizer should categorize from most recent to oldest
 
 

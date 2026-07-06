@@ -6,8 +6,10 @@ duplicates (two identical bus fares in one file) import; re-imports and
 overlapping exports contribute only their genuinely new rows.
 """
 import pathlib
+from datetime import date
 
-from tests.conftest import make_tx
+from app.models import BalanceHistory
+from tests.conftest import TestingSession, make_tx
 
 SAMPLE_CSV = pathlib.Path(__file__).parent / "capitalone_sample.csv"
 CAPONE_IMPORTER = "Capital One Credit Card"
@@ -42,6 +44,21 @@ def _import(client, acct_id, files, importer=CAPONE_IMPORTER):
 def _balance(client, acct_id):
     acc = next(a for a in client.get("/api/accounts").json() if a["id"] == acct_id)
     return acc["current_balance"]
+
+
+def _history(acct_id):
+    """balance_history rows for an account, in insertion order. Read via a fresh
+    session (no read endpoint exists — P4 is groundwork only)."""
+    db = TestingSession()
+    try:
+        return (
+            db.query(BalanceHistory)
+            .filter(BalanceHistory.account_id == acct_id)
+            .order_by(BalanceHistory.id)
+            .all()
+        )
+    finally:
+        db.close()
 
 
 # ── Legitimate duplicates survive ─────────────────────────────────────────────
@@ -187,6 +204,65 @@ def test_snapshot_still_wins_over_delta(client):
     results = _import(client, acct["id"], [("sav.csv", csv_bytes)], importer=SAVINGS_IMPORTER)
     assert results[0]["duplicate_file"] is True
     assert _balance(client, acct["id"]) == 11500.00
+
+
+# ── P4: balance_history logging ───────────────────────────────────────────────
+
+def test_delta_import_logs_one_balance_point(client):
+    acct = _make_account(client)
+    _import(client, acct["id"], [("sample.csv", SAMPLE_CSV.read_bytes())])
+    rows = _history(acct["id"])
+    assert len(rows) == 1
+    assert rows[0].balance == SAMPLE_NET
+    # as_of is the newest transaction that produced the balance.
+    latest = max(t["date"] for t in client.get("/api/transactions").json()["data"])
+    assert rows[0].as_of.isoformat() == latest
+
+
+def test_snapshot_import_logs_authoritative_point(client):
+    acct = _make_account(client, account_type="savings", name="360 Savings")
+    csv_bytes = (
+        b"Account Number,Transaction Description,Transaction Date,Transaction Type,Transaction Amount,Balance\n"
+        b"1543,Deposit,06/23/26,Credit,1000,11500.00\n"
+    )
+    _import(client, acct["id"], [("sav.csv", csv_bytes)], importer=SAVINGS_IMPORTER)
+    rows = _history(acct["id"])
+    assert len(rows) == 1
+    assert rows[0].balance == 11500.00
+    assert rows[0].as_of == date(2026, 6, 23)  # the file's stated snapshot date
+
+
+def test_reimport_logs_no_new_balance_point(client):
+    acct = _make_account(client)
+    _import(client, acct["id"], [("sample.csv", SAMPLE_CSV.read_bytes())])
+    _import(client, acct["id"], [("sample.csv", SAMPLE_CSV.read_bytes())])  # Layer-1 duplicate
+    assert len(_history(acct["id"])) == 1
+
+
+def test_overlapping_file_logs_single_new_point(client):
+    acct = _make_account(client)
+    _import(client, acct["id"], [("june.csv", SAMPLE_CSV.read_bytes())])
+    extended = SAMPLE_CSV.read_bytes() + b"2026-06-20,2026-06-21,1234,NEW COFFEE SHOP,Dining,4.50,\n"
+    _import(client, acct["id"], [("july.csv", extended)])
+    rows = _history(acct["id"])
+    assert len(rows) == 2  # first import + the one genuinely-new row
+    assert rows[-1].balance == round(SAMPLE_NET - 4.50, 2)
+    assert rows[-1].as_of == date(2026, 6, 20)
+
+
+def test_empty_file_logs_no_balance_point(client):
+    acct = _make_account(client)
+    _import(client, acct["id"], [("empty.csv", CC_HEADER)])
+    assert _history(acct["id"]) == []
+
+
+def test_two_files_log_two_points_in_order(client):
+    acct = _make_account(client)
+    _import(client, acct["id"], [("a.csv", CC_HEADER + b"2026-01-01,2026-01-02,1234,A,Food,5.00,\n")])
+    _import(client, acct["id"], [("b.csv", CC_HEADER + b"2026-02-01,2026-02-02,1234,B,Food,10.00,\n")])
+    rows = _history(acct["id"])
+    assert [r.as_of for r in rows] == [date(2026, 1, 1), date(2026, 2, 1)]
+    assert [r.balance for r in rows] == [-5.00, -15.00]
 
 
 # ── Bookkeeping surface ───────────────────────────────────────────────────────

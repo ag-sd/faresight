@@ -99,6 +99,18 @@ class FileImport(Base):
     importer: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
 
+class BalanceHistory(Base):
+    __tablename__ = "balance_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=False, index=True)
+    balance: Mapped[float] = mapped_column(Float, nullable=False)
+    # Effective date of this balance: snapshot files state it; delta files use the
+    # newest transaction that produced the balance.
+    as_of: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+
 class Category(Base):
     __tablename__ = "categories"
 

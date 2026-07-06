@@ -152,15 +152,17 @@ def test_old_accounts_route_gone(client):
     assert client.get("/accounts").status_code == 404
 
 
-def test_dashboard_has_create_rule_modal(client):
+def test_dashboard_has_no_transactions_table(client):
+    """The dashboard is a pure overview — transaction browsing/editing lives on
+    the Income/Expenses pages. The table and the modals its pen column opened
+    are gone."""
     r = client.get("/")
     assert r.status_code == 200
     html = r.text
-    assert 'id="createRuleModal"' in html
-    assert 'id="ruleDescription"' in html
-    assert 'id="ruleCategory"' in html
-    assert 'id="ruleImporter"' in html
-    assert 'fa-bookmark' in html
+    assert 'id="txTable"' not in html
+    assert "Export CSV" not in html
+    assert 'id="editCategoryModal"' not in html
+    assert 'id="createRuleModal"' not in html
 
 
 def test_income_page_has_create_rule_modal(client):
@@ -170,6 +172,30 @@ def test_income_page_has_create_rule_modal(client):
     assert 'id="ruleCategory"' in html
     assert 'id="ruleImporter"' in html
     assert 'fa-bookmark' in html
+
+
+def test_dashboard_has_badges_row(client):
+    html = client.get("/").text
+    for el_id in ("badgeNetWorth", "badgeSpend", "badgeIncome", "badgeSavingsRate",
+                  "badgeSpendDelta", "badgeIncomeDelta"):
+        assert f'id="{el_id}"' in html
+    assert "Net Worth" in html
+    assert "Savings Rate" in html
+
+
+def test_dashboard_has_cashflow_chart(client):
+    html = client.get("/").text
+    assert 'id="cashflowChart"' in html
+    assert 'id="cashflowYear"' in html
+    assert "Cash Flow" in html
+
+
+def test_dashboard_has_insights_cards(client):
+    html = client.get("/").text
+    for el_id in ("recurringTotal", "recurringList", "topMoversList", "topMerchantsList"):
+        assert f'id="{el_id}"' in html
+    assert "Recurring &amp; Subscriptions" in html
+    assert "Spending Insights" in html
 
 
 # ── Upload page: tabbed import card ───────────────────────────────────────────

@@ -139,6 +139,74 @@ class RuleOut(RuleCreate):
     model_config = {"from_attributes": True}
 
 
+# ── Summaries ─────────────────────────────────────────────────────────────────
+
+class CategorySummary(BaseModel):
+    category: str
+    total: float
+
+
+class MonthlySummary(BaseModel):
+    year: int
+    month: int
+    total: float
+
+
+class CashFlowPoint(BaseModel):
+    """Raw signed sums per month: income positive, spend negative, net = income + spend."""
+    year: int
+    month: int
+    income: float
+    spend: float
+    net: float
+
+
+class BadgeSummary(BaseModel):
+    net_worth: float
+    assets: float
+    liabilities: float
+    month_income: float
+    month_spend: float
+    prev_month_income: float
+    prev_month_spend: float
+    savings_rate: Optional[float]  # 0–1; None when month_income == 0
+
+
+# ── Insights ──────────────────────────────────────────────────────────────────
+
+class CategoryTrend(BaseModel):
+    """Raw signed sums (spend negative); delta = current − previous, so more
+    negative means spending increased."""
+    category: str
+    current: float
+    previous: float
+    delta: float
+    avg_3mo: Optional[float]  # None when no data precedes the selected month
+
+
+class MerchantSummary(BaseModel):
+    description: str
+    total: float  # raw signed sum
+    count: int
+
+
+class RecurringItem(BaseModel):
+    description: str
+    account_id: Optional[int]
+    cadence: str  # weekly | monthly | yearly
+    amount: float  # latest charge, raw negative
+    last_date: date
+    next_expected: date
+    occurrences: int
+    price_changed: bool
+    previous_amount: Optional[float]  # set only when price_changed
+
+
+class RecurringOut(BaseModel):
+    items: list[RecurringItem]
+    monthly_total: float  # monthly-equivalent, raw negative
+
+
 # ── Pagination ────────────────────────────────────────────────────────────────
 
 class PaginatedTransactions(BaseModel):

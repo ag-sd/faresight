@@ -2,17 +2,19 @@ import csv
 import hashlib
 import logging
 from collections import Counter
+from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy import case, extract, func, or_
 from sqlalchemy.orm import Session
 
+from app.buckets import bucket_filter, bucket_names
 from app.config import PAGE_SIZE
 from app.database import get_db
 from app.importers import IMPORTERS
-from app.models import Account, AccountType, Category, FileImport, Rule, Transaction, dedup_hash_for
-from app.schemas import FileImportOut, PaginatedFileImports, PaginatedTransactions, TransactionCreate, TransactionCreateWithFile, TransactionOut, TransactionUpdate
+from app.models import Account, AccountType, BalanceHistory, Category, FileImport, Rule, Transaction, dedup_hash_for
+from app.schemas import BadgeSummary, CashFlowPoint, CategorySummary, FileImportOut, MonthlySummary, PaginatedFileImports, PaginatedTransactions, TransactionCreate, TransactionCreateWithFile, TransactionOut, TransactionUpdate
 
 router = APIRouter(prefix="/api", tags=["transactions"])
 
@@ -56,15 +58,19 @@ def _dedupe_rows(db: Session, txs) -> tuple[list, int]:
     return to_insert, skipped
 
 
+def _log_balance(db: Session, account_id: int, balance: float, as_of):
+    """Append a point to balance_history — one per import that changes a balance,
+    enabling net-worth-over-time charting later."""
+    db.add(BalanceHistory(account_id=account_id, balance=balance, as_of=as_of))
+
+
 def _exclude_internal(q, db: Session):
     """Exclude bucket='internal' categories from spending aggregates.
 
     NULL-safe: SQL NOT IN silently drops NULL rows, so we explicitly keep
     model_category IS NULL rows (legacy / uncategorized transactions).
     """
-    names = [
-        r.name for r in db.query(Category).filter(Category.bucket == "internal").all()
-    ]
+    names = bucket_names(db, "internal")
     if not names:
         return q
     return q.filter(
@@ -148,7 +154,7 @@ def delete_transaction(tx_id: int, db: Session = Depends(get_db)):
 
 # ── Summary / charts ──────────────────────────────────────────────────────────
 
-@router.get("/summary/by-category")
+@router.get("/summary/by-category", response_model=List[CategorySummary])
 def summary_by_category(account_type: Optional[str] = None, db: Session = Depends(get_db)):
     q = db.query(Transaction.category, func.sum(Transaction.amount).label("total"))
     q = _filter_by_account_type(q, account_type)
@@ -157,7 +163,7 @@ def summary_by_category(account_type: Optional[str] = None, db: Session = Depend
     return [{"category": r.category, "total": round(r.total, 2)} for r in rows]
 
 
-@router.get("/summary/by-model-category")
+@router.get("/summary/by-model-category", response_model=List[CategorySummary])
 def summary_by_model_category(db: Session = Depends(get_db)):
     rows = (
         db.query(Transaction.model_category, func.sum(Transaction.amount).label("total"))
@@ -171,15 +177,25 @@ def summary_by_model_category(db: Session = Depends(get_db)):
     return [{"category": r.model_category, "total": round(r.total, 2)} for r in rows]
 
 
-@router.get("/summary/by-month")
-def summary_by_month(account_type: Optional[str] = None, db: Session = Depends(get_db)):
+@router.get("/summary/by-month", response_model=List[MonthlySummary])
+def summary_by_month(
+    account_type: Optional[str] = None,
+    bucket: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    if bucket is not None and bucket not in ("income", "spend"):
+        raise HTTPException(status_code=422, detail=f"Unknown bucket: {bucket!r}")
     q = db.query(
         extract("year", Transaction.date).label("year"),
         extract("month", Transaction.date).label("month"),
         func.sum(Transaction.amount).label("total"),
     )
     q = _filter_by_account_type(q, account_type)
-    q = _exclude_internal(q, db)
+    if bucket is not None:
+        # Bucket membership implies internal exclusion.
+        q = bucket_filter(q, db, bucket)
+    else:
+        q = _exclude_internal(q, db)
     rows = q.group_by("year", "month").order_by("year", "month").all()
     return [
         {"year": int(r.year), "month": int(r.month), "total": round(r.total, 2)}
@@ -187,7 +203,7 @@ def summary_by_month(account_type: Optional[str] = None, db: Session = Depends(g
     ]
 
 
-@router.get("/summary/by-category-for-period")
+@router.get("/summary/by-category-for-period", response_model=List[CategorySummary])
 def summary_by_category_for_period(
     year: int,
     month: Optional[int] = None,
@@ -208,6 +224,111 @@ def summary_by_category_for_period(
         q = q.filter(extract("month", Transaction.date) == month)
     rows = q.group_by(Transaction.model_category).all()
     return [{"category": r.model_category, "total": round(r.total, 2)} for r in rows]
+
+
+def _flow_sums(db: Session):
+    """Conditional-sum expressions for income and spend, by bucket membership.
+
+    income — strict (uncategorized is never income); spend — NULL-safe (uncategorized
+    counts as spend). Internal drops out of both. Raw signed sums: income positive,
+    spend negative.
+    """
+    income_names = bucket_names(db, "income")
+    spend_names = bucket_names(db, "spend")
+    income_sum = func.sum(
+        case((Transaction.model_category.in_(income_names), Transaction.amount), else_=0.0)
+    )
+    spend_sum = func.sum(
+        case(
+            (
+                or_(
+                    Transaction.model_category.is_(None),
+                    Transaction.model_category.in_(spend_names),
+                ),
+                Transaction.amount,
+            ),
+            else_=0.0,
+        )
+    )
+    return income_sum, spend_sum
+
+
+@router.get("/summary/cashflow", response_model=List[CashFlowPoint])
+def summary_cashflow(db: Session = Depends(get_db)):
+    income_sum, spend_sum = _flow_sums(db)
+    rows = (
+        db.query(
+            extract("year", Transaction.date).label("year"),
+            extract("month", Transaction.date).label("month"),
+            income_sum.label("income"),
+            spend_sum.label("spend"),
+        )
+        .group_by("year", "month")
+        .order_by("year", "month")
+        .all()
+    )
+    return [
+        {
+            "year": int(r.year),
+            "month": int(r.month),
+            "income": round(r.income, 2),
+            "spend": round(r.spend, 2),
+            "net": round(r.income + r.spend, 2),
+        }
+        for r in rows
+    ]
+
+
+def _month_flow(db: Session, year: int, month: int) -> tuple[float, float]:
+    """(income, spend) raw signed sums for one calendar month."""
+    income_sum, spend_sum = _flow_sums(db)
+    row = (
+        db.query(income_sum.label("income"), spend_sum.label("spend"))
+        .filter(
+            extract("year", Transaction.date) == year,
+            extract("month", Transaction.date) == month,
+        )
+        .one()
+    )
+    return round(row.income or 0.0, 2), round(row.spend or 0.0, 2)
+
+
+@router.get("/summary/badges", response_model=BadgeSummary)
+def summary_badges(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    today = date.today()
+    year = year if year is not None else today.year
+    month = month if month is not None else today.month
+    if not 1 <= month <= 12:
+        raise HTTPException(status_code=422, detail=f"Invalid month: {month}")
+
+    balances = [
+        a.current_balance
+        for a in db.query(Account).filter(Account.is_active == True).all()
+        if a.current_balance is not None
+    ]
+    assets = round(sum(b for b in balances if b > 0), 2)
+    liabilities = round(sum(b for b in balances if b < 0), 2)
+
+    month_income, month_spend = _month_flow(db, year, month)
+    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+    prev_income, prev_spend = _month_flow(db, prev_year, prev_month)
+
+    return {
+        "net_worth": round(assets + liabilities, 2),
+        "assets": assets,
+        "liabilities": liabilities,
+        "month_income": month_income,
+        "month_spend": month_spend,
+        "prev_month_income": prev_income,
+        "prev_month_spend": prev_spend,
+        # spend is negative, so this is (income − |spend|) / income
+        "savings_rate": round((month_income + month_spend) / month_income, 4)
+        if month_income > 0 else None,
+    }
 
 
 # ── Categorizer status ────────────────────────────────────────────────────────
@@ -346,8 +467,10 @@ async def import_bulk(
         # cards) a derived balance.
         if result.snapshot is not None:
             account.current_balance = result.snapshot.amount
+            _log_balance(db, account_id, account.current_balance, result.snapshot.as_of)
         elif to_insert:
             account.current_balance = round((account.current_balance or 0.0) + inserted_delta, 2)
+            _log_balance(db, account_id, account.current_balance, max(tx.date for tx, _ in to_insert))
 
         results.append({"filename": filename, "imported": len(to_insert), "skipped": skipped, "errors": result.errors})
 

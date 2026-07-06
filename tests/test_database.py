@@ -119,3 +119,24 @@ def test_migrate_adds_file_import_columns():
         assert row[1] == 0
     finally:
         Base.metadata.drop_all(bind=engine)
+
+
+def test_migrate_creates_balance_history():
+    """balance_history is created on a legacy DB that predates it, and the
+    migration is idempotent (safe to run on every boot)."""
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE balance_history"))
+
+        migrate_db()
+        migrate_db()  # idempotent — second run is a no-op
+
+        with engine.connect() as conn:
+            cols = {r[1] for r in conn.execute(text("PRAGMA table_info(balance_history)"))}
+            assert {"id", "account_id", "balance", "as_of", "created_at"} <= cols
+            indexes = {r[1] for r in conn.execute(text("PRAGMA index_list(balance_history)"))}
+            assert "ix_balance_history_account_id" in indexes
+    finally:
+        Base.metadata.drop_all(bind=engine)
