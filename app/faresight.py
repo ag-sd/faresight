@@ -68,16 +68,54 @@ def frontend_config():
     return {"top_card_page_limit": TOP_CARD_PAGE_LIMIT}
 
 
+# Context for the shared account_page.html template. Income lists bank
+# (checking/savings) accounts with a Transfers tab; Expenses lists credit cards
+# only. `scope` maps to the transactions `account_type` filter.
+INCOME_CTX = {
+    "active_page": "income",
+    "page_title": "Income",
+    "card_header": "Accounts & Transfers",
+    "scope": "bank",
+    "show_transfers": True,
+    "add_options": [
+        {"value": "checking", "label": "Checking Account"},
+        {"value": "savings", "label": "Savings Account"},
+    ],
+    "type_options": [
+        {"value": "checking", "label": "Checking"},
+        {"value": "savings", "label": "Savings"},
+    ],
+}
+EXPENSES_CTX = {
+    "active_page": "expenses",
+    "page_title": "Expenses",
+    "card_header": "Credit Cards",
+    "scope": "credit_card",
+    "show_transfers": False,
+    "add_options": [
+        {"value": "credit_card", "label": "Credit Card"},
+    ],
+    "type_options": [
+        {"value": "credit_card", "label": "Credit Card"},
+    ],
+}
+
+
 @app.get("/")
 def root(request: Request):
-    return templates.TemplateResponse(request, "app/pages/index.html")
+    return templates.TemplateResponse(request, "app/pages/index.html", {"active_page": "dashboard"})
 
 
-@app.get("/accounts")
-def accounts_page(request: Request):
-    return templates.TemplateResponse(request, "app/pages/accounts.html")
+@app.get("/income")
+def income_page(request: Request):
+    return templates.TemplateResponse(request, "app/pages/account_page.html", INCOME_CTX)
+
+
+@app.get("/expenses")
+def expenses_page(request: Request):
+    return templates.TemplateResponse(request, "app/pages/account_page.html", EXPENSES_CTX)
 
 
 @app.get("/upload")
 def upload_page(request: Request):
-    return templates.TemplateResponse(request, "app/pages/upload.html")
+    return templates.TemplateResponse(request, "app/pages/upload.html", {"active_page": "upload"})

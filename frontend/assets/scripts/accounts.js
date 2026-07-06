@@ -1,3 +1,9 @@
+// ── Page config ───────────────────────────────────────────────────────────────
+// Injected by the template (see account_page.html). `accountScope` is the
+// transactions `account_type` filter ('bank' or 'credit_card'); `showTransfers`
+// toggles the Transfers tab (Income only).
+const { accountScope, showTransfers } = window.PAGE_CONFIG;
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let _editingAccountId = null;
 let _detailsAccount = null;
@@ -12,6 +18,13 @@ const ACCOUNT_TYPE_LABELS = {
   savings: 'Savings',
   credit_card: 'Credit Card',
 };
+
+// Which account types the visible accounts list shows for this page.
+function inScope(a) {
+  return accountScope === 'credit_card'
+    ? a.account_type === 'credit_card'
+    : a.account_type === 'checking' || a.account_type === 'savings';
+}
 
 // ── Tabulator: accounts ───────────────────────────────────────────────────────
 function initAccountsTable() {
@@ -150,21 +163,20 @@ function refreshTransfers(accounts) {
 // ── Accounts table ────────────────────────────────────────────────────────────
 async function refreshAccounts() {
   // Fetch ALL accounts: transfers rows, source dropdowns, and tooltips may
-  // reference credit cards (e.g. CC autopay from checking). Only the visible
-  // accounts list is restricted to checking/savings.
+  // reference accounts of any type (e.g. CC autopay from checking). Only the
+  // visible accounts list is restricted to this page's scope.
   const accounts = await api('/api/accounts');
   _allAccounts = accounts;
 
-  refreshTransfers(accounts);
-  accountsTable.setData(accounts.filter(
-    a => a.account_type === 'checking' || a.account_type === 'savings'));
+  if (showTransfers) refreshTransfers(accounts);
+  accountsTable.setData(accounts.filter(inScope));
 }
 
-// ── Tabulator: account activity (checking/savings transactions) ──────────────
+// ── Tabulator: account activity (transactions in this page's scope) ──────────
 function initActivityTable() {
   activityTable = new Tabulator('#activityTable', {
     ajaxURL: '/api/transactions',
-    ajaxParams: () => ({ account_type: 'bank' }),
+    ajaxParams: () => ({ account_type: accountScope }),
     pagination: true,
     paginationMode: 'remote',
     paginationSize: 25,
@@ -187,12 +199,14 @@ function initActivityTable() {
         formatter: (cell) => esc(String(cell.getValue())),
       },
       {
-        title: 'AI Category', field: 'model_category', widthGrow: 2,
+        // Fixed width sized to the widest pill ("Entertainment & Subscriptions");
+        // the freed grow space goes to Source below.
+        title: 'Category', field: 'model_category', width: 210,
         headerFilter: 'input',
         formatter: modelCategoryFormatter,
       },
       {
-        title: 'Source', field: 'account_id', widthGrow: 1,
+        title: 'Source', field: 'account_id', widthGrow: 2,
         formatter: (cell) => {
           const id = cell.getValue();
           if (!id) return '—';
@@ -261,6 +275,7 @@ function openAddAccount(type) {
   document.getElementById('addAccountModalTitle').textContent = {
     checking: 'Add Checking Account',
     savings: 'Add Savings Account',
+    credit_card: 'Add Credit Card',
   }[type] ?? 'Add Account';
   document.getElementById('addAccountForm').reset();
   document.getElementById('acctId').value = '';
@@ -424,17 +439,19 @@ api('/api/accounts/bank-logos').then(m => { _bankLogos = m; });
     _topCardPageLimit = cfg.top_card_page_limit ?? _topCardPageLimit;
   } catch (_) { /* keep default */ }
   initAccountsTable();
-  initTransfersTable();
+  if (showTransfers) initTransfersTable();
   // Activity table's Source column needs _allAccounts before its first render.
   await refreshAccounts();
   initActivityTable();
 })();
 
 // Tabulator renders 0-height inside hidden containers — redraw once visible.
-document.getElementById('tab-transfers').addEventListener('shown.bs.tab', () => {
-  transfersTable.redraw(true);
-});
+if (showTransfers) {
+  document.getElementById('tab-transfers').addEventListener('shown.bs.tab', () => {
+    transfersTable.redraw(true);
+  });
+}
 document.getElementById('collapseAcctCard').addEventListener('shown.bs.collapse', () => {
   accountsTable.redraw(true);
-  transfersTable.redraw(true);
+  if (showTransfers) transfersTable.redraw(true);
 });

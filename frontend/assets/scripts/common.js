@@ -41,11 +41,9 @@ function modelCategoryFormatter(cell) {
   }
   if (!model_category) return `<span class="badge rounded-pill" style="background-color:${categoryColor('Other')}">Uncategorized</span>`;
   const color = categoryColor(model_category);
-  const pill = `<span class="badge rounded-pill" style="background-color:${color}">${esc(model_category)}</span>`;
-  const conf = model_confidence != null
-    ? `<small class="text-secondary ms-1" style="font-size:0.72em">${model_confidence}/10</small>`
-    : '';
-  return pill + conf;
+  // Confidence moves to a hover tooltip so the pill stays compact.
+  const title = model_confidence != null ? ` title="Confidence: ${model_confidence}/10"` : '';
+  return `<span class="badge rounded-pill" style="background-color:${color}"${title}>${esc(model_category)}</span>`;
 }
 
 function amountFormatter(cell) {

@@ -31,7 +31,7 @@ function initTxTable() {
         formatter: (cell) => esc(String(cell.getValue())),
       },
       {
-        title: 'AI Category', field: 'model_category', widthGrow: 2,
+        title: 'Category', field: 'model_category', widthGrow: 2,
         headerFilter: 'input',
         formatter: modelCategoryFormatter,
       },
