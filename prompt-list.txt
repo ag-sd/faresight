@@ -220,9 +220,8 @@ Income offset expenses for reimbursements
 Group several expenses together (Ex: Florida Travel)
     View by group
 
-Next, We are going to build a importer for Bofa Checking/Savings. Add the new importer to bofa.py.
-Create a samle test file to add to our test suite. Note that the CSV has some header lines that needs to be disposed. Let me know
-how you will solve these in the context of the ABC iterator
+Next, We are going to build a importer for SoFi Checking/Savings. Add the new importer to sofi.py.
+Create a samle test file to add to our test suite. 
 Here is a sample file
 
 
