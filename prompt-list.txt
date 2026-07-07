@@ -198,10 +198,18 @@ Lets add a loader for Bank of America credit card. Here is the sample transactio
 number that we should totally use for transaction idempotency. Please work that into the idempotency logic.This importer will
 sit in a new file called bofa.py
 
+Include bank category in the AI prompt
 
 ----
 
 Trading Accounts support
+All importers
+    - Bofa Checking / Saving
+    - Chase cc
+    - Amex cc + saving
+    - Sofi saving
+    - fidelity
+    - betterment
 
 ----
 Reports feature (Export)
@@ -212,7 +220,8 @@ Income offset expenses for reimbursements
 Group several expenses together (Ex: Florida Travel)
     View by group
 
-
+Next, We are going to build a importer for Bofa Checking/Savings. Add a new importer file called chase.py
+and write the loader in it. Create a samle test file to add to our test suite. Here is a sample file
 
 
 
