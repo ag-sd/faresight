@@ -198,7 +198,7 @@ Lets add a loader for Bank of America credit card. Here is the sample transactio
 number that we should totally use for transaction idempotency. Please work that into the idempotency logic.This importer will
 sit in a new file called bofa.py
 
-Include bank category in the AI prompt
+Include supplied bank category in the AI prompt as an additional hint
 
 ----
 
@@ -220,8 +220,10 @@ Income offset expenses for reimbursements
 Group several expenses together (Ex: Florida Travel)
     View by group
 
-Next, We are going to build a importer for Bofa Checking/Savings. Add a new importer file called chase.py
-and write the loader in it. Create a samle test file to add to our test suite. Here is a sample file
+Next, We are going to build a importer for Bofa Checking/Savings. Add the new importer to bofa.py.
+Create a samle test file to add to our test suite. Note that the CSV has some header lines that needs to be disposed. Let me know
+how you will solve these in the context of the ABC iterator
+Here is a sample file
 
 
 

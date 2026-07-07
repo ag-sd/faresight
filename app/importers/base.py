@@ -24,6 +24,16 @@ class CsvImporter(ABC, Generic[C]):
 
     encoding = "utf-8-sig"
 
+    def skip_lines(self) -> int:
+        """Preamble lines to drop before DictReader sees the CSV. Override when
+        the source file has a summary header before the real column header."""
+        return 0
+
+    def row_start(self) -> int:
+        """1-based row number of the first data row in the original file.
+        Used as the enumerate start for accurate error messages."""
+        return 2
+
     def new_context(self) -> C:
         """Fresh per-file state bag. Override to return a typed dataclass when an
         importer needs to accumulate state across rows; the default suits the
@@ -50,10 +60,15 @@ class CsvImporter(ABC, Generic[C]):
         importer: Optional[str] = None,
     ) -> ImportResult:
         ctx = self.new_context()
-        reader = csv.DictReader(io.StringIO(file_bytes.decode(self.encoding)))
+        text = file_bytes.decode(self.encoding)
+        skip = self.skip_lines()
+        if skip:
+            lines = text.splitlines(keepends=True)
+            text = "".join(lines[skip:])
+        reader = csv.DictReader(io.StringIO(text))
         transactions, errors = [], []
 
-        for i, row in enumerate(reader, start=2):
+        for i, row in enumerate(reader, start=self.row_start()):
             try:
                 tx = self.parse_row(row, account, ctx)
                 if tx is not None:
