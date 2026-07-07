@@ -12,4 +12,9 @@ top_card_page_limit: 5
 
 bank_logos:
   bank of america: bank-of-america.svg
-  capital one: capital-one.svg
+  capital one: capital-one.jpeg
+  chase: chase.svg
+  american express: amex.svg
+  fidelity: fidelity.svg
+  sofi: sofi.jpeg
+  betterment: betterment.svg
