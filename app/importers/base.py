@@ -24,6 +24,12 @@ class CsvImporter(ABC, Generic[C]):
 
     encoding = "utf-8-sig"
 
+    def fieldnames(self) -> Optional[list]:
+        """Column names for DictReader. Return None (default) to let DictReader
+        read column names from the first row. Override when the source has no
+        header row."""
+        return None
+
     def skip_lines(self) -> int:
         """Preamble lines to drop before DictReader sees the CSV. Override when
         the source file has a summary header before the real column header."""
@@ -65,7 +71,7 @@ class CsvImporter(ABC, Generic[C]):
         if skip:
             lines = text.splitlines(keepends=True)
             text = "".join(lines[skip:])
-        reader = csv.DictReader(io.StringIO(text))
+        reader = csv.DictReader(io.StringIO(text), fieldnames=self.fieldnames())
         transactions, errors = [], []
 
         for i, row in enumerate(reader, start=self.row_start()):

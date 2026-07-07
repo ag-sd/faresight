@@ -1,5 +1,7 @@
 from typing import Callable
 
+from app.importers.amex import import_credit_card_csv as _amex_cc
+from app.importers.amex import import_savings_csv as _amex_savings
 from app.importers.bofa import import_checking_savings_csv as _bofa_checking
 from app.importers.bofa import import_credit_card_csv as _bofa_cc
 from app.importers.capitalone import import_checking_savings_csv as _capitalone_savings
@@ -14,4 +16,6 @@ IMPORTERS: dict[str, Callable] = {
     "Bank of America Checking/Savings": _bofa_checking,
     "Chase Credit Card": _chase_cc,
     "SoFi Checking/Savings": _sofi,
+    "American Express Savings": _amex_savings,
+    "American Express Credit Card": _amex_cc,
 }

@@ -220,9 +220,7 @@ Income offset expenses for reimbursements
 Group several expenses together (Ex: Florida Travel)
     View by group
 
-Next, We are going to build a importer for SoFi Checking/Savings. Add the new importer to sofi.py.
-Create a samle test file to add to our test suite. 
-Here is a sample file
+How do we incorporate Trading activity like the below files into this model.
 
 
 
