@@ -191,6 +191,8 @@ Upgrade to FA 7
 
 Allow rules to use Regex (starts with / ends with)
 
+For transaction categorization rules, lets update the UI modal to accept a regex which can then be applied to new rules as well as existing
+rules.
 
 
 

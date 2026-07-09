@@ -14,6 +14,7 @@ from app.config import PAGE_SIZE
 from app.database import get_db
 from app.importers import IMPORTERS
 from app.models import Account, AccountType, BalanceHistory, Category, FileImport, Rule, Transaction, dedup_hash_for
+from app.rule_matching import build_matcher
 from app.schemas import BadgeSummary, CashFlowPoint, CategorySummary, FileImportOut, MonthlySummary, PaginatedFileImports, PaginatedTransactions, TransactionCreate, TransactionCreateWithFile, TransactionOut, TransactionUpdate
 
 router = APIRouter(prefix="/api", tags=["transactions"])
@@ -439,13 +440,18 @@ async def import_bulk(
         db.flush()  # populate log.id before inserting transactions
 
         # Pre-classify transactions that match a rule for this importer.
-        rule_map = {
-            r.description: r.category
-            for r in db.query(Rule).filter(Rule.importer == importer).all()
-        }
+        # Ordered oldest-first so the first-created matching rule wins.
+        rules = (
+            db.query(Rule)
+            .filter(Rule.importer == importer)
+            .order_by(Rule.created_at, Rule.id)
+            .all()
+        )
+        match_rule = build_matcher(rules)  # compiles all patterns once per file
         for tx in result.transactions:
-            if tx.description in rule_map:
-                tx.model_category = rule_map[tx.description]
+            category = match_rule(tx.description)
+            if category is not None:
+                tx.model_category = category
                 tx.model_confidence = 10
 
         # Layer 2 — row-level occurrence-counting dedupe.

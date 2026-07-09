@@ -344,10 +344,16 @@ afterCategorySave = async () => {
   await refreshCategorizerStatus();
 };
 
+// Refresh the rules table whenever a rule is created or edited via the shared modal.
+afterRuleSave = loadRules;
+
 // ── Classification rules ──────────────────────────────────────────────────────
+
+let _rulesById = {};
 
 async function loadRules() {
   const rules = await api('/api/rules');
+  _rulesById = Object.fromEntries(rules.map(r => [r.id, r]));
   const wrap = document.getElementById('rulesTableWrap');
 
   if (rules.length === 0) {
@@ -365,6 +371,9 @@ async function loadRules() {
           <button class="btn btn-outline-primary" onclick="applyRule(${r.id})">
             <i class="fa-solid fa-play me-1"></i>Run Now
           </button>
+          <button class="btn btn-outline-secondary" onclick="editRule(${r.id})" title="Edit rule">
+            <i class="fa-regular fa-pen-to-square"></i>
+          </button>
           <button class="btn btn-outline-danger" onclick="deleteRule(${r.id})">
             <i class="fa-regular fa-trash-can"></i>
           </button>
@@ -377,7 +386,7 @@ async function loadRules() {
       <table class="table table-hover mb-0 align-middle">
         <thead class="table-light">
           <tr>
-            <th>Description</th>
+            <th>Pattern</th>
             <th>Category</th>
             <th>Importer</th>
             <th></th>
@@ -386,6 +395,10 @@ async function loadRules() {
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+}
+
+function editRule(id) {
+  openEditRuleModal(_rulesById[id]);
 }
 
 async function applyRule(id) {

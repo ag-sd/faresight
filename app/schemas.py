@@ -136,9 +136,17 @@ class CategoryOut(CategoryCreate):
 # ── Rules ─────────────────────────────────────────────────────────────────────
 
 class RuleCreate(BaseModel):
+    # A regex pattern matched case-insensitively anywhere in the transaction
+    # description; plain text behaves as a case-insensitive "contains".
     description: str
     category: str
     importer: str
+
+
+class RuleUpdate(BaseModel):
+    description: Optional[str] = None
+    category: Optional[str] = None
+    importer: Optional[str] = None
 
 
 class RuleOut(RuleCreate):

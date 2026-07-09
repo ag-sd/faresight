@@ -189,42 +189,93 @@ async function goOffline() {
 }
 
 // ── Rules ─────────────────────────────────────────────────────────────────────
-async function openCreateRuleModal() {
-  document.getElementById('ruleError').classList.add('d-none');
-  document.getElementById('ruleDescription').value =
-    document.getElementById('editTxDescription').textContent;
+// Rule descriptions are regex patterns (case-insensitive, match anywhere).
+// Pages assign `afterRuleSave` to refresh their own views once a save lands.
+let _editingRuleId = null;
+let afterRuleSave = () => {};
 
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function _populateRuleSelects() {
   const catSel = document.getElementById('ruleCategory');
   catSel.innerHTML = categoryNames()
     .map(c => `<option value="${esc(c)}">${esc(c)}</option>`)
     .join('');
-  catSel.value = document.getElementById('editCategorySelect').value;
 
   const importers = await api('/api/importers');
   document.getElementById('ruleImporter').innerHTML =
     importers.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join('');
+}
 
+function _showRuleModal(title, saveLabel) {
+  document.getElementById('ruleError').classList.add('d-none');
+  document.getElementById('createRuleModalLabel').textContent = title;
+  document.getElementById('ruleSaveBtn').textContent = saveLabel;
   new bootstrap.Modal(document.getElementById('createRuleModal')).show();
+}
+
+async function openCreateRuleModal() {
+  _editingRuleId = null;
+  // Escape the transaction description so the prefilled pattern matches it
+  // literally (e.g. AMZN*MKTP); the user can edit it into a real regex.
+  document.getElementById('ruleDescription').value =
+    escapeRegExp(document.getElementById('editTxDescription').textContent);
+
+  await _populateRuleSelects();
+  document.getElementById('ruleCategory').value =
+    document.getElementById('editCategorySelect').value;
+
+  _showRuleModal('Create Classification Rule', 'Save Rule');
+}
+
+async function openEditRuleModal(rule) {
+  _editingRuleId = rule.id;
+  document.getElementById('ruleDescription').value = rule.description;
+
+  await _populateRuleSelects();
+  document.getElementById('ruleCategory').value = rule.category;
+  document.getElementById('ruleImporter').value = rule.importer;
+
+  _showRuleModal('Edit Classification Rule', 'Save Changes');
 }
 
 async function saveRule() {
   const errEl = document.getElementById('ruleError');
   errEl.classList.add('d-none');
+  const description = document.getElementById('ruleDescription').value;
+
+  // Fast local feedback; the backend's re.compile is authoritative (JS and
+  // Python regex dialects differ on edge syntax).
   try {
-    await api('/api/rules', {
-      method: 'POST',
-      body: JSON.stringify({
-        description: document.getElementById('ruleDescription').value,
-        category:    document.getElementById('ruleCategory').value,
-        importer:    document.getElementById('ruleImporter').value,
-      }),
-    });
-    bootstrap.Modal.getInstance(document.getElementById('createRuleModal')).hide();
+    new RegExp(description);
   } catch (err) {
-    const msg = err.message.includes('already exists')
+    errEl.textContent = 'Invalid regular expression: ' + err.message;
+    errEl.classList.remove('d-none');
+    return;
+  }
+
+  const body = JSON.stringify({
+    description,
+    category: document.getElementById('ruleCategory').value,
+    importer: document.getElementById('ruleImporter').value,
+  });
+  try {
+    if (_editingRuleId !== null) {
+      await api(`/api/rules/${_editingRuleId}`, { method: 'PATCH', body });
+    } else {
+      await api('/api/rules', { method: 'POST', body });
+    }
+    bootstrap.Modal.getInstance(document.getElementById('createRuleModal')).hide();
+    _editingRuleId = null;
+    await afterRuleSave();
+  } catch (err) {
+    let msg;
+    try { msg = JSON.parse(err.message).detail; } catch (_) { msg = err.message; }
+    errEl.textContent = msg.includes('already exists')
       ? 'This exact rule already exists.'
-      : 'Failed to save rule: ' + err.message;
-    errEl.textContent = msg;
+      : 'Failed to save rule: ' + msg;
     errEl.classList.remove('d-none');
   }
 }

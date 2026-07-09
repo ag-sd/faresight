@@ -98,7 +98,7 @@ uvicorn app.faresight:app --reload
 Routes are split into routers under `app/routers/`:
 - `app/routers/transactions.py` — CRUD + summary/chart endpoints + CSV import (`/api/transactions`, `/api/summary/*`, `/api/categories`)
 - `app/routers/accounts.py` — account management (`/api/accounts`, `/api/accounts/bank-logos`)
-- `app/routers/rules.py` — classification rules CRUD + retroactive apply (`/api/rules`)
+- `app/routers/rules.py` — classification rules CRUD + retroactive apply (`/api/rules`); rule descriptions are regex patterns (case-insensitive `re.search`, shared matching in `app/rule_matching.py`)
 - `app/routers/sync.py` — NAS sync control (`/api/sync`, `/api/sync/status`, `/api/sync/go-offline`)
 
 `app/faresight.py` wires the routers, mounts `/static → frontend/`, handles the lifespan (DB creation → `migrate_db()` → `sync_from_nas()` → periodic sync loop + categorizer subprocess with supervisor → shutdown push), and serves the three HTML pages at `/`, `/accounts`, and `/upload`.

@@ -7,10 +7,10 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <p class="text-muted small mb-3">When this exact description is imported, it will be pre-classified with the chosen category at full confidence — no AI needed.</p>
+        <p class="text-muted small mb-3">Imported transactions whose description matches this pattern are pre-classified with the chosen category at full confidence — no AI needed. The pattern is a case-insensitive regular expression: plain text matches anywhere in the description; regex syntax (<code>|</code>, <code>\d+</code>, <code>^</code>, <code>$</code>) is available.</p>
         <div class="mb-3">
-          <label for="ruleDescription" class="form-label fw-semibold">Description</label>
-          <input type="text" id="ruleDescription" class="form-control" readonly />
+          <label for="ruleDescription" class="form-label fw-semibold">Description pattern</label>
+          <input type="text" id="ruleDescription" class="form-control" />
         </div>
         <div class="mb-3">
           <label for="ruleCategory" class="form-label fw-semibold">Category</label>
@@ -24,7 +24,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" onclick="saveRule()">Save Rule</button>
+        <button type="button" id="ruleSaveBtn" class="btn btn-primary" onclick="saveRule()">Save Rule</button>
       </div>
     </div>
   </div>
