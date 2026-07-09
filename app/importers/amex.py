@@ -24,7 +24,7 @@ class AmexSavings(CsvImporter[dict]):
             date=tx_date,
             description=row["Description"].strip(),
             amount=amount,
-            category="Uncategorized",
+            bank_category="Uncategorized",
             account_id=account.id,
         )
 
@@ -38,13 +38,13 @@ class AmexCreditCard(CsvImporter[dict]):
         tx_date = datetime.strptime(row["Date"].strip(), "%m/%d/%Y").date()
         amount = round(-float(row["Amount"].strip()), 2)  # Amex sign is inverted
         ref = row["Reference"].strip().strip("'") or None
-        category = row["Category"].strip() or "Uncategorized"
+        bank_category = row["Category"].strip() or "Uncategorized"
 
         return TransactionCreate(
             date=tx_date,
             description=row["Description"].strip(),
             amount=amount,
-            category=category,
+            bank_category=bank_category,
             account_id=account.id,
             reference_number=ref,
         )

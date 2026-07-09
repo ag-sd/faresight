@@ -2,9 +2,10 @@
 
 Imported transactions are saved with model_confidence=-1 (pending). This module
 runs as a standalone subprocess (`python -m app.categorizer`) that polls for
-those rows, annotates them with a *suggested* category + confidence
-(model_category, model_confidence), and writes the results back. The suggestion
-never overwrites the human-facing `category` field.
+those rows, categorizes them, and writes the results back to model_category /
+model_confidence — the canonical display category. `bank_category` (the raw
+bank label) is used only as an LLM hint. User edits set user_modified_category,
+which the write-back guard respects, so they are never overwritten.
 
 Run independently for debugging:
     FARESIGHT_DB=/path/to/db.db python -m app.categorizer
@@ -344,7 +345,7 @@ def _categorize_pending(db) -> int:
                 date=row.date,
                 description=row.description,
                 amount=row.amount,
-                category=row.category,
+                bank_category=row.bank_category,
                 model_confidence=PENDING_CONFIDENCE,
             )
             for row in batch_rows
@@ -355,7 +356,7 @@ def _categorize_pending(db) -> int:
                 "id": i,
                 "description": tx.description,
                 "amount": tx.amount,
-                "bank_category_hint": tx.category if tx.category and tx.category != "Uncategorized" else "",
+                "bank_category_hint": tx.bank_category if tx.bank_category and tx.bank_category != "Uncategorized" else "",
             }
             for i, tx in enumerate(txs)
         ]
@@ -402,9 +403,30 @@ def _categorize_pending(db) -> int:
     return total_processed
 
 
+def _main_loop(stop: "threading.Event", session_factory, interval: float) -> None:
+    """Categorize-then-wait until `stop` is set.
+
+    The first cycle runs immediately (no initial sleep); the inter-cycle wait is
+    Event-based so a signal arriving mid-wait exits promptly — well inside the
+    parent's 10s terminate() grace period in app/faresight.py.
+    """
+    while not stop.is_set():
+        logger.info("Categorizer: poll cycle waking up")
+        db = session_factory()
+        try:
+            _categorize_pending(db)
+        except Exception:
+            # Ollama down etc.: rows stay at -1 and are retried next cycle.
+            logger.warning("Categorization poll cycle failed", exc_info=True)
+        finally:
+            db.close()
+        stop.wait(interval)
+
+
 if __name__ == "__main__":
     import signal
     import sys
+    import threading
 
     logging.basicConfig(
         level=logging.INFO,
@@ -414,26 +436,15 @@ if __name__ == "__main__":
 
     from app.database import SessionLocal
 
-    _shutdown = False
+    stop = threading.Event()
 
-    def _handle_term(signum, frame):
-        global _shutdown
-        logger.info("Categorizer: SIGTERM received, shutting down")
-        _shutdown = True
+    def _handle_signal(signum, frame):
+        logger.info("Categorizer: signal %d received, shutting down", signum)
+        stop.set()
 
-    signal.signal(signal.SIGTERM, _handle_term)
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)  # clean Ctrl+C in dev, no traceback
 
     logger.info("Categorizer worker started (poll interval: %ds)", CATEGORIZATION_POLL_INTERVAL_S)
-    while not _shutdown:
-        time.sleep(CATEGORIZATION_POLL_INTERVAL_S)
-        if _shutdown:
-            break
-        logger.info("Categorizer: poll cycle waking up")
-        db = SessionLocal()
-        try:
-            _categorize_pending(db)
-        except Exception:
-            logger.warning("Categorization poll cycle failed", exc_info=True)
-        finally:
-            db.close()
+    _main_loop(stop, SessionLocal, CATEGORIZATION_POLL_INTERVAL_S)
     logger.info("Categorizer: worker exiting")

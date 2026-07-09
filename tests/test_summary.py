@@ -2,39 +2,6 @@
 from tests.conftest import make_tx
 
 
-# ── /api/summary/by-category ─────────────────────────────────────────────────
-
-def test_by_category_empty(client):
-    r = client.get("/api/summary/by-category")
-    assert r.status_code == 200
-    assert r.json() == []
-
-
-def test_by_category_sums_per_category(client):
-    make_tx(client, category="Food", amount=-10.00)
-    make_tx(client, category="Food", amount=-5.50)
-    make_tx(client, category="Transport", amount=-20.00)
-
-    data = {row["category"]: row["total"] for row in client.get("/api/summary/by-category").json()}
-
-    assert data["Food"] == -15.50
-    assert data["Transport"] == -20.00
-
-
-def test_by_category_single_entry(client):
-    make_tx(client, category="Salary", amount=3000.00)
-    rows = client.get("/api/summary/by-category").json()
-    assert len(rows) == 1
-    assert rows[0] == {"category": "Salary", "total": 3000.00}
-
-
-def test_by_category_rounds_to_two_decimals(client):
-    make_tx(client, category="Misc", amount=-0.001, description="tiny 1")
-    make_tx(client, category="Misc", amount=-0.001, description="tiny 2")
-    rows = client.get("/api/summary/by-category").json()
-    assert rows[0]["total"] == round(-0.001 + -0.001, 2)
-
-
 # ── /api/summary/by-model-category ──────────────────────────────────────────
 
 def test_by_model_category_empty(client):
@@ -312,27 +279,9 @@ def test_by_category_for_period_counts_fees_and_interest(client):
     }
 
 
-def test_by_category_excludes_rows_with_transfer_model_category(client):
-    make_tx(client, amount=-50.00, category="Food")
-    make_tx(client, amount=500.00, category="Payment/Credit",
-            model_category="Payments", model_confidence=10)
-
-    data = {r["category"]: r["total"] for r in client.get("/api/summary/by-category").json()}
-    assert data == {"Food": -50.00}
-
-
 # ── P6: response_model shape conformance ──────────────────────────────────────
 # response_model= coerces the returned dicts; these lock the exact keys/types so a
 # future field rename can't silently drift the API surface.
-
-def test_category_summary_shape(client):
-    make_tx(client, category="Food", amount=-12.34)
-    for path in ("/api/summary/by-category",):
-        row = client.get(path).json()[0]
-        assert set(row) == {"category", "total"}
-        assert isinstance(row["category"], str)
-        assert isinstance(row["total"], float)
-
 
 def test_model_category_summary_shape(client):
     make_tx(client, model_category="Groceries", model_confidence=8, amount=-9.00, date="2026-01-05")

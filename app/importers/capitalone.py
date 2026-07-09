@@ -14,14 +14,14 @@ class CapitalOneCreditCard(CsvImporter[dict]):
     def parse_row(self, row: dict, account: Account, ctx: dict) -> TransactionCreate:
         tx_date = date_type.fromisoformat(row["Transaction Date"].strip())
         description = row["Description"].strip()
-        category = row["Category"].strip() or "Uncategorized"
+        bank_category = row["Category"].strip() or "Uncategorized"
         amount = self.signed_amount(row["Debit"].strip(), row["Credit"].strip())
 
         return TransactionCreate(
             date=tx_date,
             description=description,
             amount=round(amount, 2),
-            category=category,
+            bank_category=bank_category,
             account_id=account.id,
         )
 
@@ -62,7 +62,7 @@ class CapitalOneCheckingSavings(CsvImporter[_BalanceCtx]):
             date=tx_date,
             description=description,
             amount=round(amount, 2),
-            category="Uncategorized",
+            bank_category="Uncategorized",
             account_id=account.id,
         )
 

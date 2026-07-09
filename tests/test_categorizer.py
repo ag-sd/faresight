@@ -26,7 +26,7 @@ def _cat_data():
 
 def tx(description="Thing", amount=-10.0):
     return TransactionCreate(
-        date="2026-01-01", description=description, amount=amount, category="Uncategorized"
+        date="2026-01-01", description=description, amount=amount, bank_category="Uncategorized"
     )
 
 
@@ -204,11 +204,11 @@ def test_categorize_pending_passes_bank_category_hint(monkeypatch):
         # One row with a real bank category, one with "Uncategorized"
         row_with_hint = Transaction(
             date=_date(2026, 1, 1), description="Trader Joes", amount=-48.0,
-            category="Food", model_confidence=cz.PENDING_CONFIDENCE, file_id=fi.id,
+            bank_category="Food", model_confidence=cz.PENDING_CONFIDENCE, file_id=fi.id,
         )
         row_no_hint = Transaction(
             date=_date(2026, 1, 1), description="SQ *MERCHANT", amount=-12.0,
-            category="Uncategorized", model_confidence=cz.PENDING_CONFIDENCE, file_id=fi.id,
+            bank_category="Uncategorized", model_confidence=cz.PENDING_CONFIDENCE, file_id=fi.id,
         )
         db.add_all([row_with_hint, row_no_hint])
         db.commit()
@@ -255,7 +255,7 @@ def _make_row(db, description="Coffee", amount=-5.0, confidence=PENDING_CONFIDEN
         date=date(2026, 1, 1),
         description=description,
         amount=amount,
-        category="Uncategorized",
+        bank_category="Uncategorized",
         model_confidence=confidence,
         file_id=fi.id,
     )
@@ -304,7 +304,7 @@ def test_categorize_pending_ignores_null_confidence(monkeypatch):
         db.add(fi)
         db.flush()
         db.execute(text(
-            "INSERT INTO transactions (date, description, amount, category, model_confidence, user_modified_category, file_id)"
+            "INSERT INTO transactions (date, description, amount, bank_category, model_confidence, user_modified_category, file_id)"
             f" VALUES ('2026-01-01', 'Coffee', -5.0, 'Uncategorized', NULL, 0, {fi.id})"
         ))
         db.commit()
@@ -472,6 +472,97 @@ def test_categorize_pending_checks_ollama_per_batch(monkeypatch):
         db.close()
 
 
+# ── _main_loop (worker entrypoint loop) ─────────────────────────────────────────
+
+class _RecordingSession:
+    closed = 0
+
+    def close(self):
+        _RecordingSession.closed += 1
+
+
+@pytest.fixture(autouse=True)
+def _reset_recording_session():
+    _RecordingSession.closed = 0
+
+
+def test_main_loop_first_cycle_immediate_and_wait_interruptible(monkeypatch):
+    """No initial sleep before the first cycle, and a set stop event
+    short-circuits the long inter-cycle wait."""
+    import threading
+    import time as _time
+
+    stop = threading.Event()
+    calls = {"n": 0}
+
+    def fake_pending(db):
+        calls["n"] += 1
+        stop.set()
+
+    monkeypatch.setattr(cz, "_categorize_pending", fake_pending)
+    t0 = _time.monotonic()
+    cz._main_loop(stop, _RecordingSession, interval=60)
+    assert _time.monotonic() - t0 < 5  # would be >=60 if the wait weren't interruptible
+    assert calls["n"] == 1
+    assert _RecordingSession.closed == 1
+
+
+def test_main_loop_zero_cycles_when_stop_preset(monkeypatch):
+    import threading
+
+    stop = threading.Event()
+    stop.set()
+    monkeypatch.setattr(cz, "_categorize_pending",
+                        lambda db: pytest.fail("cycle ran after stop was set"))
+    cz._main_loop(stop, _RecordingSession, interval=60)
+    assert _RecordingSession.closed == 0
+
+
+def test_main_loop_survives_cycle_exception(monkeypatch):
+    """A failed cycle (e.g. Ollama down) is logged and the loop continues;
+    the session is closed either way."""
+    import threading
+
+    stop = threading.Event()
+    calls = {"n": 0}
+
+    def fake_pending(db):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("Ollama down")
+        stop.set()
+
+    monkeypatch.setattr(cz, "_categorize_pending", fake_pending)
+    cz._main_loop(stop, _RecordingSession, interval=0)
+    assert calls["n"] == 2
+    assert _RecordingSession.closed == 2
+
+
+def test_worker_subprocess_exits_cleanly_on_sigint():
+    """End-to-end: `python -m app.categorizer` handles SIGINT without a traceback."""
+    import os
+    import signal
+    import subprocess
+    import sys
+    import time as _time
+
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "app.categorizer"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=os.environ.copy(),  # FARESIGHT_DB points at the test temp file
+    )
+    try:
+        _time.sleep(1.0)  # let it install signal handlers and start the loop
+        proc.send_signal(signal.SIGINT)
+        _, stderr = proc.communicate(timeout=5)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+    assert proc.returncode == 0
+    assert b"Traceback" not in stderr
+
+
 # ── TransactionOut sentinel mapping ─────────────────────────────────────────────
 
 def _out(model_confidence):
@@ -481,7 +572,7 @@ def _out(model_confidence):
         date=date(2026, 1, 1),
         description="Test",
         amount=-5.0,
-        category="Uncategorized",
+        bank_category="Uncategorized",
         created_at=date(2026, 1, 1),
         model_confidence=model_confidence,
     )

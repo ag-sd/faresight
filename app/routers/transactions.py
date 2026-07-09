@@ -90,7 +90,6 @@ def _exclude_internal(q, db: Session):
 
 @router.get("/transactions", response_model=PaginatedTransactions)
 def list_transactions(
-    category: Optional[str] = None,
     account_type: Optional[str] = None,
     pending_only: bool = False,
     page: int = 1,
@@ -100,8 +99,6 @@ def list_transactions(
     offset = (page - 1) * limit
     q = db.query(Transaction)
     q = _filter_by_account_type(q, account_type)
-    if category:
-        q = q.filter(Transaction.category == category)
     if pending_only:
         q = q.filter(Transaction.model_confidence == -1)
     total = q.count()
@@ -116,6 +113,14 @@ def create_transaction(body: TransactionCreateWithFile, db: Session = Depends(ge
     if body.account_id is not None and not db.get(Account, body.account_id):
         raise HTTPException(status_code=422, detail=f"Account {body.account_id} does not exist")
     data = body.model_dump()
+    # A category supplied on manual create is a human choice: it becomes the
+    # display category, pinned against the background categorizer. It wins over
+    # any explicitly-posted model_* fields on purpose.
+    category = data.pop("category")
+    if category is not None:
+        data["model_category"] = category
+        data["model_confidence"] = 10
+        data["user_modified_category"] = True
     # Manual rows carry the identity hash too, so a later CSV import containing
     # a hand-entered transaction dedupes against it instead of duplicating.
     data["dedup_hash"] = dedup_hash_for(body.account_id, body.date, body.description, body.amount, body.reference_number)
@@ -158,15 +163,6 @@ def delete_transaction(tx_id: int, db: Session = Depends(get_db)):
 
 
 # ── Summary / charts ──────────────────────────────────────────────────────────
-
-@router.get("/summary/by-category", response_model=List[CategorySummary])
-def summary_by_category(account_type: Optional[str] = None, db: Session = Depends(get_db)):
-    q = db.query(Transaction.category, func.sum(Transaction.amount).label("total"))
-    q = _filter_by_account_type(q, account_type)
-    q = _exclude_internal(q, db)
-    rows = q.group_by(Transaction.category).all()
-    return [{"category": r.category, "total": round(r.total, 2)} for r in rows]
-
 
 @router.get("/summary/by-model-category", response_model=List[CategorySummary])
 def summary_by_model_category(db: Session = Depends(get_db)):

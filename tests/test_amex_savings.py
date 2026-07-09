@@ -84,7 +84,7 @@ def test_description_mapped(account, sample_bytes):
 
 def test_category_is_uncategorized(account, sample_bytes):
     result = import_savings_csv(sample_bytes, account)
-    assert all(tx.category == "Uncategorized" for tx in result.transactions)
+    assert all(tx.bank_category == "Uncategorized" for tx in result.transactions)
 
 
 # ── No balance snapshot ───────────────────────────────────────────────────────

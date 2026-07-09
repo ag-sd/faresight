@@ -132,7 +132,7 @@ to an Opus agent independently.
   > otherwise assert the endpoints' filtered contract thoroughly. Use `Optional[T]` (not `T | None`)
   > for any new FastAPI query params. Run the full suite before declaring done.
 
-- [ ] ### 5. Dual category fields (`category` vs `model_category`) with inconsistent semantics
+- [x] ### 5. Dual category fields (`category` vs `model_category`) with inconsistent semantics
 
   **Files:** `app/models.py`, `frontend/assets/scripts/common.js` (`saveCategory`), `app/importers/*.py`, `/api/summary/by-category` in `app/routers/transactions.py`
 
@@ -163,7 +163,7 @@ to an Opus agent independently.
   > Tests: cover the migration, the categorizer non-overwrite guarantee, importer seeding, and the
   > summary endpoint. Run the full suite before declaring done.
 
-- [ ] ### 6. Categorizer subprocess is unsupervised — a crash permanently stops categorization
+- [x] ### 6. Categorizer subprocess is unsupervised — a crash permanently stops categorization
 
   **Files:** `app/faresight.py:21-22` (`_spawn_categorizer`), shutdown handling around `app/faresight.py:43`, `app/categorizer.py` main loop
 

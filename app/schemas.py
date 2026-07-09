@@ -13,7 +13,8 @@ class TransactionCreate(BaseModel):
     date: date
     description: str
     amount: float
-    category: str
+    # Raw category label from the bank's export; LLM hint only, never displayed.
+    bank_category: str = "Uncategorized"
     account_id: Optional[int] = None
     model_category: Optional[str] = None
     model_confidence: Optional[int] = -1
@@ -28,7 +29,7 @@ class TransactionUpdate(BaseModel):
     date: Optional[date] = None
     description: Optional[str] = None
     amount: Optional[float] = None
-    category: Optional[str] = None
+    bank_category: Optional[str] = None
     account_id: Optional[int] = None
     model_category: Optional[str] = None
     model_confidence: Optional[int] = None
@@ -37,6 +38,10 @@ class TransactionUpdate(BaseModel):
 
 class TransactionCreateWithFile(TransactionCreate):
     file_id: int
+    # Human-chosen display category for manual entry. When supplied, the row is
+    # created pre-categorized (model_category=category, model_confidence=10,
+    # user_modified_category=True) and is NOT queued for AI categorization.
+    category: Optional[str] = None
 
 
 class TransactionOut(TransactionCreate):

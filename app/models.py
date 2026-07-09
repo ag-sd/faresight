@@ -32,9 +32,13 @@ class Transaction(Base):
     date: Mapped[date] = mapped_column(Date, nullable=False)
     description: Mapped[str] = mapped_column(String(255), nullable=False)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
-    category: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Raw category label from the bank's export; feeds the categorizer's LLM
+    # hint only, never displayed. The canonical display category is model_category.
+    bank_category: Mapped[str] = mapped_column(String(100), nullable=False)
     account_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)
-    # AI-suggested category for human review; never overwrites `category`.
+    # Canonical display category: written by the categorizer worker, rules, or
+    # user edits; user edits set user_modified_category so the worker never
+    # overwrites them.
     model_category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     model_confidence: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=-1)
     user_modified_category: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

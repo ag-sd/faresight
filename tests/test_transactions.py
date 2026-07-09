@@ -20,11 +20,39 @@ def test_create_minimal(client):
     assert tx["date"] == "2026-01-15"
     assert tx["description"] == "Test expense"
     assert tx["amount"] == -10.00
-    assert tx["category"] == "Food"
+    assert tx["bank_category"] == "Uncategorized"
+    assert tx["model_category"] is None
+    assert tx["model_confidence"] is None  # pending (-1) masked to null
+    assert tx["user_modified_category"] is False
     assert tx["account_id"] is None
     # Manual entry carries no bank reference number.
     assert tx["reference_number"] is None
     assert "created_at" in tx
+
+
+def test_create_with_category_is_precategorized(client):
+    """A category on manual create is a human choice: display field set, pinned, not queued."""
+    tx = make_tx(client, category="Travel")
+    assert tx["model_category"] == "Travel"
+    assert tx["model_confidence"] == 10
+    assert tx["user_modified_category"] is True
+    assert tx["bank_category"] == "Uncategorized"
+    # Not pending — the background categorizer must not pick it up.
+    assert client.get("/api/transactions?pending_only=true").json()["total"] == 0
+
+
+def test_create_without_category_is_queued(client):
+    make_tx(client)
+    body = client.get("/api/transactions?pending_only=true").json()
+    assert body["total"] == 1
+
+
+def test_create_with_explicit_bank_category_persists(client):
+    tx = make_tx(client, bank_category="FOOD_AND_DRINK")
+    assert tx["bank_category"] == "FOOD_AND_DRINK"
+    # Bank label alone is a hint, not a categorization — row stays pending.
+    assert tx["model_category"] is None
+    assert tx["model_confidence"] is None
 
 
 def test_create_with_all_fields(client):
@@ -38,6 +66,7 @@ def test_create_positive_amount(client):
     """Positive amounts (income) are valid."""
     tx = make_tx(client, amount=1500.00, category="Salary", description="Monthly salary")
     assert tx["amount"] == 1500.00
+    assert tx["model_category"] == "Salary"
 
 
 def test_create_missing_required_field_returns_422(client):
@@ -102,17 +131,6 @@ def test_list_ordered_by_date_desc(client):
     assert dates == ["2026-03-01", "2026-02-01", "2026-01-01"]
 
 
-def test_list_filter_by_category(client):
-    make_tx(client, category="Food", description="Grocery 1")
-    make_tx(client, category="Transport", description="Bus fare")
-    make_tx(client, category="Food", description="Grocery 2")
-    r = client.get("/api/transactions?category=Food")
-    assert r.status_code == 200
-    body = r.json()
-    assert all(t["category"] == "Food" for t in body["data"])
-    assert len(body["data"]) == 2
-
-
 def test_list_filter_pending_only(client):
     """pending_only=true returns only rows still awaiting categorization (-1)."""
     make_tx(client, description="Pending row")                       # default model_confidence = -1
@@ -162,15 +180,6 @@ def test_list_filter_by_account_type_bank_page2_does_not_leak_cc_rows(client):
     assert len(p2["data"]) == 1
     assert p2["data"][0]["account_id"] == bank_id
     assert p2["data"][0]["description"] != "cc-row"
-
-
-def test_list_filter_unknown_category_returns_empty(client):
-    make_tx(client, category="Food")
-    r = client.get("/api/transactions?category=NonExistent")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["data"] == []
-    assert body["total"] == 0
 
 
 # ── Pagination ─────────────────────────────────────────────────────────────────
@@ -246,10 +255,10 @@ def test_patch_multiple_fields(client):
     tx = make_tx(client)
     r = client.patch(
         f"/api/transactions/{tx['id']}",
-        json={"category": "Travel", "account_id": acct_id},
+        json={"bank_category": "Travel", "account_id": acct_id},
     )
     data = r.json()
-    assert data["category"] == "Travel"
+    assert data["bank_category"] == "Travel"
     assert data["account_id"] == acct_id
 
 

@@ -201,8 +201,10 @@ def test_apply_rule_skips_user_modified_transactions(client):
     txs = client.get("/api/transactions").json()["data"]
     trader_joes = next(t for t in txs if "TRADER JOE" in t["description"])
 
+    # What the edit modal really sends: a pinned display-category edit.
     client.patch(f"/api/transactions/{trader_joes['id']}", json={
-        "category": "Shopping",
+        "model_category": "Shopping",
+        "model_confidence": 10,
         "user_modified_category": True,
     })
 
@@ -216,7 +218,7 @@ def test_apply_rule_skips_user_modified_transactions(client):
     assert r.json()["updated"] == 0
 
     refreshed = client.get(f"/api/transactions/{trader_joes['id']}").json()
-    assert refreshed["category"] == "Shopping"
+    assert refreshed["model_category"] == "Shopping"
 
 
 def test_apply_rule_no_matching_file_imports(client):

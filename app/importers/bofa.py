@@ -24,7 +24,7 @@ class BankOfAmericaCreditCard(CsvImporter[dict]):
             date=tx_date,
             description=description,
             amount=amount,
-            category="Uncategorized",
+            bank_category="Uncategorized",
             account_id=account.id,
             reference_number=reference,
         )
@@ -74,7 +74,7 @@ class BankOfAmericaChecking(CsvImporter[_CheckingCtx]):
             date=tx_date,
             description=row["Description"].strip(),
             amount=amount,
-            category="Uncategorized",
+            bank_category="Uncategorized",
             account_id=account.id,
         )
 

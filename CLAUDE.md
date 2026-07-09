@@ -101,7 +101,7 @@ Routes are split into routers under `app/routers/`:
 - `app/routers/rules.py` — classification rules CRUD + retroactive apply (`/api/rules`)
 - `app/routers/sync.py` — NAS sync control (`/api/sync`, `/api/sync/status`, `/api/sync/go-offline`)
 
-`app/faresight.py` wires the routers, mounts `/static → frontend/`, handles the lifespan (DB creation → `migrate_db()` → `sync_from_nas()` → periodic sync loop + categorization loop → shutdown push), and serves the three HTML pages at `/`, `/accounts`, and `/upload`.
+`app/faresight.py` wires the routers, mounts `/static → frontend/`, handles the lifespan (DB creation → `migrate_db()` → `sync_from_nas()` → periodic sync loop + categorizer subprocess with supervisor → shutdown push), and serves the three HTML pages at `/`, `/accounts`, and `/upload`.
 
 **Schema migrations** are handled by `migrate_db()` in `app/database.py` — raw `ALTER TABLE` / `RENAME COLUMN` SQL against the live SQLite file. Add new migrations there when adding columns to existing tables.
 
@@ -253,9 +253,20 @@ account/day/vendor/amount, e.g. two bus fares) so **no uniqueness constraint is 
 
 ## Transaction categorization (`app/categorizer.py`)
 
-Categorization runs asynchronously via a background worker started at app startup — it does
-**not** block the upload response. The suggestion is written to `model_category` /
-`model_confidence` and **never** overwrites the human-facing `category`.
+Categorization runs asynchronously via a background worker subprocess — it does
+**not** block the upload response.
+
+**Category field model** (unified 2026-07):
+- `model_category` + `model_confidence` — the model-suggestion pair **and** the canonical
+  display field. Everything user-facing (tables, edit modal, summaries, buckets, insights)
+  reads and writes `model_category`.
+- `bank_category` — the raw category label from the bank's CSV export (or `"Uncategorized"`).
+  Used **only** as the `bank_category_hint` sent to the LLM; never displayed.
+- `user_modified_category` — set `True` by user edits; the worker's write-back and rule
+  retro-apply are both guarded on it, so human edits are never overwritten.
+- Manual `POST /api/transactions` accepts an optional `category` (human choice): it is written
+  to `model_category` with confidence 10 and `user_modified_category=True` — the row is
+  pre-categorized and never queued. Omitted → the row queues for AI categorization as usual.
 
 **`model_confidence` sentinel values:**
 - `None` — legacy only; not present in normal flow after the `-1` default was introduced
@@ -267,19 +278,29 @@ Categorization runs asynchronously via a background worker started at app startu
 **Upload flow** (`import_bulk` in `app/routers/transactions.py`): parsed rows are saved
 immediately with `model_confidence = -1`. No Ollama call on the hot path.
 
-**Background worker** (`_categorization_loop` / `_categorize_pending` in `app/categorizer.py`):
-an asyncio task (started in `lifespan`) polls every `categorization_poll_interval_s` seconds
-(config default: 10). Each cycle opens its own `SessionLocal()` session, queries for `-1` rows,
-pipes them through `categorize_transactions()` (batched), and writes results back. If Ollama is
-down, the rows stay at `-1` and are retried next cycle.
+**Background worker** (`python -m app.categorizer`, spawned as a subprocess in the lifespan):
+polls every `categorization_poll_interval_s` seconds (config default: 10). Each cycle opens its
+own `SessionLocal()` session, queries for `-1` rows, categorizes them in batches
+(`_categorize_pending`), and writes results back. If Ollama is down, the rows stay at `-1` and
+are retried next cycle.
 
-- `ALLOWED_CATEGORIES` is the single module-level constant shared by the prompt builder and the
-  validator. Confidence is an int on a 0–10 scale.
+**Worker supervision** (`_supervise_categorizer` in `app/faresight.py`): an asyncio task polls
+the Popen handle every 5s and respawns it on unexpected exit, with exponential backoff
+(1s → 60s cap) that resets once a poll finds the child healthy. Respawns update
+`app.state.cat_proc` so `/api/categorizer/running` stays truthful. On shutdown the supervisor is
+cancelled *before* `terminate()`, so the intentional exit is never respawned. The worker's main
+loop (`_main_loop`) runs its first cycle immediately and waits on a `threading.Event` between
+cycles; SIGTERM/SIGINT set the event, so shutdown completes well inside the parent's 10s grace
+period.
+
+- Allowed categories are loaded from the DB each cycle (`_load_category_data`), so user edits
+  take effect without a restart. Confidence is an int on a 0–10 scale.
 - `BATCH_SIZE = 5`. A batch failure never aborts the run: parse/infer failures retry once, then
   fall back to `"Other"` / confidence 0.
 - `ensure_ollama_running()` health-checks `{OLLAMA_HOST}/api/tags`, starts `ollama serve` if down
   (detached, never killed), polls up to 30s, and confirms the model is present.
-- `build_prompt()` is currently a **stub** — real prompt engineering lands later.
+- `build_prompt()` includes each row's `bank_category_hint` (from `bank_category`, empty when
+  `"Uncategorized"`), explicitly marked advisory-only.
 - HTTP/process touch-points are isolated as `_get_tags`, `_start_ollama`, `_generate` so tests
   monkeypatch them and never hit a real server. `OLLAMA_HOST` lives in `app/config.py` /
   `config.yaml` (default `http://localhost:11434`).

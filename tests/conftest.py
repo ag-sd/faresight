@@ -110,7 +110,6 @@ def make_tx(client, **kwargs):
         "date": "2026-01-15",
         "description": "Test expense",
         "amount": -10.00,
-        "category": "Food",
         **kwargs,
     }
     r = client.post("/api/transactions", json=payload)

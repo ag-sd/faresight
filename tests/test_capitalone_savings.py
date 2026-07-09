@@ -123,7 +123,7 @@ def test_account_balance_none_on_empty_csv(account):
 
 def test_all_rows_default_uncategorized(account, sample_bytes):
     result = import_checking_savings_csv(sample_bytes, account)
-    assert all(tx.category == "Uncategorized" for tx in result.transactions)
+    assert all(tx.bank_category == "Uncategorized" for tx in result.transactions)
 
 
 # ── Error handling ────────────────────────────────────────────────────────────

@@ -108,7 +108,7 @@ def test_description_preserved(account, sample_bytes):
 def test_category_preserved(account, sample_bytes):
     result = import_credit_card_csv(sample_bytes, account)
     arte = next(tx for tx in result.transactions if "ARTE MUSEUM" in tx.description)
-    assert arte.category == "Entertainment"
+    assert arte.bank_category == "Entertainment"
 
 
 # ── All transactions start pending (rules system handles payment classification) ──

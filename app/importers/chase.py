@@ -15,13 +15,13 @@ class ChaseCreditCard(CsvImporter[dict]):
         tx_date = datetime.strptime(row["Transaction Date"].strip(), "%m/%d/%Y").date()
         description = row["Description"].strip()
         amount = round(float(row["Amount"].strip()), 2)
-        category = row["Category"].strip() or "Uncategorized"
+        bank_category = row["Category"].strip() or "Uncategorized"
 
         return TransactionCreate(
             date=tx_date,
             description=description,
             amount=amount,
-            category=category,
+            bank_category=bank_category,
             account_id=account.id,
             reference_number=None,
         )

@@ -13,6 +13,43 @@ def test_engine_pragmas():
         assert conn.execute(text("PRAGMA busy_timeout")).scalar() == 5000
 
 
+def test_migrate_renames_category_to_bank_category():
+    """A legacy DB with the old `category` column is renamed to `bank_category`
+    with data preserved; running migrate_db twice is a no-op."""
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    try:
+        with engine.begin() as conn:
+            # Fake the legacy schema: create_all made bank_category; rename it back.
+            conn.execute(text(
+                "ALTER TABLE transactions RENAME COLUMN bank_category TO category"
+            ))
+            conn.execute(text(
+                "INSERT INTO file_imports (filename, rows_seen, rows_persisted) "
+                "VALUES ('t.csv', 1, 1)"
+            ))
+            fid = conn.execute(text("SELECT id FROM file_imports LIMIT 1")).scalar()
+            conn.execute(text(
+                "INSERT INTO transactions "
+                "(date, description, amount, category, file_id, user_modified_category) "
+                "VALUES ('2026-01-01', 'legacy', -5.0, 'Food', :fid, 0)"
+            ), {"fid": fid})
+
+        migrate_db()
+        migrate_db()  # idempotent
+
+        with engine.connect() as conn:
+            cols = {row[1] for row in conn.execute(text("PRAGMA table_info(transactions)"))}
+            assert "bank_category" in cols
+            assert "category" not in cols
+            value = conn.execute(text(
+                "SELECT bank_category FROM transactions WHERE description = 'legacy'"
+            )).scalar()
+        assert value == "Food"
+    finally:
+        Base.metadata.drop_all(bind=engine)
+
+
 def test_migrate_requeues_split_transfer_rows():
     """The "Transfers & Fees" split re-queues model-suggested rows (skipping
     user-edited ones) so the worker reassigns them to the new categories."""
@@ -31,7 +68,7 @@ def test_migrate_requeues_split_transfer_rows():
                 conn.execute(
                     text(
                         "INSERT INTO transactions "
-                        "(date, description, amount, category, file_id, "
+                        "(date, description, amount, bank_category, file_id, "
                         " model_category, model_confidence, user_modified_category) "
                         "VALUES ('2026-01-01', :desc, -1.0, 'Food', :fid, "
                         " 'Transfers & Fees', 10, :edited)"
@@ -70,7 +107,7 @@ def test_migrate_backfills_dedup_hash():
             conn.execute(
                 text(
                     "INSERT INTO transactions "
-                    "(date, description, amount, category, file_id, "
+                    "(date, description, amount, bank_category, file_id, "
                     " model_confidence, user_modified_category, dedup_hash) "
                     "VALUES ('2026-01-15', 'Legacy row', -12.5, 'Food', :fid, -1, 0, NULL)"
                 ),
@@ -143,7 +180,7 @@ def test_migrate_adds_reference_number():
             conn.execute(
                 text(
                     "INSERT INTO transactions "
-                    "(date, description, amount, category, file_id, "
+                    "(date, description, amount, bank_category, file_id, "
                     " model_confidence, user_modified_category, dedup_hash) "
                     "VALUES ('2026-01-15', 'Legacy row', -12.5, 'Food', :fid, -1, 0, :h)"
                 ),

@@ -2,11 +2,6 @@
 
 add beneficiaries as a list to the account object. Make it possbile to edit this list separately.
 
-We are now going to add a new importer. THis is a capital one checking/savings transaction file. Review the contents of the csv
-and plan for how you will add this to the capital one loader. Remember debits are negative and credits are positive. A new
-feature here is that the transaction file has the current balance on the account. We should have a way to update the account object with
-the most recent balance from the transactions file
-
 
 
 We will add a new tab
@@ -194,20 +189,19 @@ Categorizer should categorize from most recent to oldest
 
 Upgrade to FA 7
 
-Lets add a loader for Bank of America credit card. Here is the sample transactions file  . In this file there is a reference
-number that we should totally use for transaction idempotency. Please work that into the idempotency logic.This importer will
-sit in a new file called bofa.py
+Allow rules to use Regex (starts with / ends with)
 
-Include supplied bank category in the AI prompt as an additional hint
+
+
 
 ----
 
 Trading Accounts support
 All importers
-    - Bofa Checking / Saving
-    - Chase cc
-    - Amex cc + saving
-    - Sofi saving
+Lets add a loader for Bank of America credit card. Here is the sample transactions file  . In this file there is a reference
+number that we should totally use for transaction idempotency. Please work that into the idempotency logic.This importer will
+sit in a new file called bofa.py
+
     - fidelity
     - betterment
 
@@ -242,10 +236,7 @@ delete from file_imports
 delete from balance_history
 ;
 
-We should update the Account object so that a user can add a file importer to the account directly. We should update
-the account edit modal to add an accordion that captures source in one panel and the account importer in another
-the accordion should be collapsed by default. Lastly lets stop using a button group for the save discard and deactivate buttons. Lets
-use ordinary bootstrap buttons but keep the colors
+
 
 
 

@@ -118,12 +118,11 @@ The local DB directory is created automatically on first run.
 
 | Method | Path                          | Description                    |
 |--------|-------------------------------|--------------------------------|
-| GET    | `/api/transactions`           | List all (optional `?category=`)|
+| GET    | `/api/transactions`           | List all (paginated)            |
 | POST   | `/api/transactions`           | Create a transaction            |
 | GET    | `/api/transactions/{id}`      | Get one transaction             |
 | PATCH  | `/api/transactions/{id}`      | Update fields                   |
 | DELETE | `/api/transactions/{id}`      | Delete                          |
-| GET    | `/api/summary/by-category`    | Totals grouped by category      |
 | GET    | `/api/summary/by-month`       | Totals grouped by year+month (`?bucket=income\|spend`) |
 | GET    | `/api/summary/cashflow`       | Monthly income/spend/net series |
 | GET    | `/api/summary/badges`         | Net worth + monthly flow + savings rate |
@@ -144,11 +143,12 @@ Interactive docs at http://localhost:8000/docs.
 | `date`                  | date     | yes      | YYYY-MM-DD                                   |
 | `description`           | string   | yes      |                                              |
 | `amount`                | float    | yes      | Negative = expense, positive = income        |
-| `category`              | string   | yes      | Human-facing category                        |
+| `bank_category`         | string   | no       | Raw bank label; LLM hint only, never displayed |
 | `account_id`            | int      | no       | FK → accounts                                |
-| `model_category`        | string   | no       | AI-suggested category (never overwrites `category`) |
-| `model_confidence`      | int      | no       | 0–10; null = pending AI; 10 = rule-assigned  |
+| `model_category`        | string   | no       | Canonical display category; pinned once user-edited |
+| `model_confidence`      | int      | no       | 0–10; null = pending AI; 10 = rule/user-assigned |
 | `user_modified_category`| bool     | no       | True once the user has manually set a category |
+| `category` (POST only)  | string   | no       | Manual-entry human choice → becomes `model_category`, pinned |
 
 ## Running tests
 
@@ -162,7 +162,7 @@ Tests use an in-memory SQLite database — the real local DB is never touched.
 |------|--------|
 | `tests/conftest.py` | Fixtures: in-memory DB, `TestClient`, `make_tx` helper |
 | `tests/test_transactions.py` | CRUD: create, read, list, filter, patch, delete |
-| `tests/test_summary.py` | `/api/summary/by-category`, `/api/summary/by-month`, `/api/categories` |
+| `tests/test_summary.py` | `/api/summary/by-model-category`, `/api/summary/by-month`, `/api/categories` |
 | `tests/test_config.py` | Config loading and type correctness |
 | `tests/test_nas.py` | NAS stub raises `NotImplementedError` |
 
@@ -238,7 +238,7 @@ erDiagram
         date     date
         string   description
         float    amount
-        string   category
+        string   bank_category
         int      account_id            FK
         string   model_category
         int      model_confidence

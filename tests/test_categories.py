@@ -158,21 +158,17 @@ def test_rule_rejects_deleted_category(client):
 # ── Integration: _exclude_internal uses bucket column ────────────────────────
 
 def test_summary_excludes_internal_bucket(client):
-    """Categories with bucket='internal' are excluded from spend summaries.
-
-    summary_by_category groups by Transaction.category and filters on
-    model_category — so both fields need to be set in the test rows.
-    """
+    """Categories with bucket='internal' are excluded from spend summaries."""
     from tests.conftest import make_tx
 
-    # Spend transaction: category + model_category both set to "Groceries".
-    make_tx(client, description="Groceries txn", amount=-50.0,
-            category="Groceries", model_category="Groceries", model_confidence=8)
+    make_tx(client, description="Groceries txn", amount=-50.0, date="2026-05-01",
+            model_category="Groceries", model_confidence=8)
     # Internal transaction: excluded because model_category is in the internal bucket.
-    make_tx(client, description="Card payment", amount=100.0,
-            category="Payments", model_category="Payments", model_confidence=8)
+    make_tx(client, description="Card payment", amount=100.0, date="2026-05-02",
+            model_category="Payments", model_confidence=8)
 
-    totals = {r["category"]: r["total"] for r in client.get("/api/summary/by-category").json()}
+    totals = {r["category"]: r["total"]
+              for r in client.get("/api/summary/by-category-for-period?year=2026").json()}
     assert "Groceries" in totals
     assert "Payments" not in totals
 
@@ -182,7 +178,8 @@ def test_summary_excludes_custom_internal_category(client):
     from tests.conftest import make_tx
 
     client.post("/api/categories", json={"name": "Sweep", "color": "#aabbcc", "bucket": "internal"})
-    make_tx(client, description="Sweep txn", amount=-200.0,
+    make_tx(client, description="Sweep txn", amount=-200.0, date="2026-05-01",
             model_category="Sweep", model_confidence=8)
-    totals = {r["category"]: r["total"] for r in client.get("/api/summary/by-category").json()}
+    totals = {r["category"]: r["total"]
+              for r in client.get("/api/summary/by-category-for-period?year=2026").json()}
     assert "Sweep" not in totals

@@ -111,13 +111,13 @@ def test_empty_reference_becomes_none(account):
 def test_category_preserved(account, sample_bytes):
     result = import_credit_card_csv(sample_bytes, account)
     tx = next(tx for tx in result.transactions if "PENNY LICK" in tx.description)
-    assert tx.category == "Restaurant-Bar & Café"
+    assert tx.bank_category == "Restaurant-Bar & Café"
 
 
 def test_empty_category_falls_back_to_uncategorized(account, sample_bytes):
     result = import_credit_card_csv(sample_bytes, account)
     tx = next(tx for tx in result.transactions if "MOBILE PAYMENT" in tx.description)
-    assert tx.category == "Uncategorized"
+    assert tx.bank_category == "Uncategorized"
 
 
 # ── All transactions start pending ────────────────────────────────────────────

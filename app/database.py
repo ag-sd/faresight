@@ -64,6 +64,12 @@ def migrate_db() -> None:
         rows = conn.execute(text("PRAGMA table_info(transactions)")).fetchall()
         tx_existing = {row[1] for row in rows}
 
+        # Category unification: the old human-facing `category` column becomes
+        # `bank_category` (raw bank label, LLM hint only); model_category is the
+        # canonical display category.
+        if "category" in tx_existing and "bank_category" not in tx_existing:
+            conn.execute(text("ALTER TABLE transactions RENAME COLUMN category TO bank_category"))
+
         # Drop legacy free-text source column if still present.
         if "source" in tx_existing:
             conn.execute(text("ALTER TABLE transactions DROP COLUMN source"))

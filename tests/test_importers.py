@@ -27,7 +27,7 @@ class FakeImporter(CsvImporter[dict]):
             date=date.fromisoformat(row["date"].strip()),
             description=row["desc"].strip(),
             amount=round(float(row["amount"].strip()), 2),
-            category="Uncategorized",
+            bank_category="Uncategorized",
             account_id=account.id,
         )
 
@@ -146,7 +146,7 @@ class SnapshotImporter(CsvImporter[_Ctx]):
         if ctx.latest is None or d >= ctx.latest:
             ctx.latest, ctx.balance = d, bal
         return TransactionCreate(date=d, description=row["desc"].strip(),
-                                 amount=bal, category="Uncategorized",
+                                 amount=bal, bank_category="Uncategorized",
                                  account_id=account.id)
 
     def balance_snapshot(self, ctx: _Ctx) -> Optional[BalanceSnapshot]:

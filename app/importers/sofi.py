@@ -25,7 +25,7 @@ class SoFiChecking(CsvImporter[_SoFiCtx]):
         tx_date = date_type.fromisoformat(row["Date"].strip())
         description = row["Description"].strip()
         amount = round(float(row["Amount"].strip()), 2)
-        category = row["Type"].strip() or "Uncategorized"
+        bank_category = row["Type"].strip() or "Uncategorized"
 
         if ctx.latest is None or tx_date >= ctx.latest:
             ctx.latest = tx_date
@@ -35,7 +35,7 @@ class SoFiChecking(CsvImporter[_SoFiCtx]):
             date=tx_date,
             description=description,
             amount=amount,
-            category=category,
+            bank_category=bank_category,
             account_id=account.id,
         )
 

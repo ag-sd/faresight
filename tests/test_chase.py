@@ -103,14 +103,14 @@ def test_no_reference_number(account, sample_bytes):
 def test_bank_category_preserved(account, sample_bytes):
     result = import_credit_card_csv(sample_bytes, account)
     tx = next(tx for tx in result.transactions if "AMAZON MKTPL" in tx.description)
-    assert tx.category == "Shopping"
+    assert tx.bank_category == "Shopping"
 
 
 def test_empty_category_falls_back_to_uncategorized(account, sample_bytes):
     result = import_credit_card_csv(sample_bytes, account)
     # Payment Thank You-Mobile has no Category in the Chase export
     tx = next(tx for tx in result.transactions if "Payment Thank You" in tx.description)
-    assert tx.category == "Uncategorized"
+    assert tx.bank_category == "Uncategorized"
 
 
 # ── All transactions start pending ────────────────────────────────────────────

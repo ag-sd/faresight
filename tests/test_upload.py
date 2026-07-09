@@ -413,7 +413,7 @@ def test_categorizer_status_excludes_null_confidence(client):
     db.add(fi)
     db.flush()
     db.execute(text(
-        "INSERT INTO transactions (date, description, amount, category, model_confidence, user_modified_category, file_id)"
+        "INSERT INTO transactions (date, description, amount, bank_category, model_confidence, user_modified_category, file_id)"
         f" VALUES ('2026-01-01', 'legacy row', -5.0, 'Food', NULL, 0, {fi.id})"
     ))
     db.commit()

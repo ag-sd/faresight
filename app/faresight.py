@@ -17,9 +17,43 @@ import app.sync as sync_mod
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s: %(message)s")
 
+logger = logging.getLogger(__name__)
+
+_SUPERVISE_INTERVAL_S = 5.0
+_BACKOFF_INITIAL_S = 1.0
+_BACKOFF_MAX_S = 60.0
+
 
 def _spawn_categorizer() -> subprocess.Popen:
     return subprocess.Popen([sys.executable, "-m", "app.categorizer"])
+
+
+async def _supervise_categorizer(
+    app: FastAPI,
+    interval: float = _SUPERVISE_INTERVAL_S,
+    backoff_initial: float = _BACKOFF_INITIAL_S,
+    backoff_max: float = _BACKOFF_MAX_S,
+) -> None:
+    """Respawn the categorizer subprocess when it exits unexpectedly.
+
+    Exponential backoff between consecutive respawns avoids crash-loop spinning;
+    the backoff resets only when a poll finds the child healthy, so a child that
+    dies within one interval still backs off. Cancelled (before terminate) on
+    shutdown so the intentional exit is never respawned.
+    """
+    backoff = backoff_initial
+    while True:
+        await asyncio.sleep(interval)
+        proc = app.state.cat_proc
+        if proc is not None and proc.poll() is None:
+            backoff = backoff_initial  # healthy — reset
+            continue
+        code = proc.poll() if proc is not None else None
+        logger.warning("Categorizer exited (code=%s) — respawning in %.0fs", code, backoff)
+        await asyncio.sleep(backoff)
+        backoff = min(backoff * 2, backoff_max)
+        # Updating app.state keeps /api/categorizer/running truthful.
+        app.state.cat_proc = _spawn_categorizer()
 
 
 @asynccontextmanager
@@ -33,10 +67,17 @@ async def lifespan(app: FastAPI):
     engine.dispose()
     sync_task = asyncio.create_task(sync_mod._periodic_sync_loop())
     app.state.cat_proc = _spawn_categorizer()
+    cat_supervisor = asyncio.create_task(_supervise_categorizer(app))
+    app.state.cat_supervisor = cat_supervisor
     yield
     sync_task.cancel()
+    # Cancel the supervisor before terminating the worker so the intentional
+    # exit can never be observed and respawned.
+    cat_supervisor.cancel()
     with suppress(asyncio.CancelledError):
         await sync_task
+    with suppress(asyncio.CancelledError):
+        await cat_supervisor
     app.state.cat_proc.terminate()
     try:
         app.state.cat_proc.wait(timeout=10)

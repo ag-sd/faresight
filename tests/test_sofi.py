@@ -86,9 +86,9 @@ def test_description_mapped(account, sample_bytes):
 def test_type_used_as_category(account, sample_bytes):
     result = import_checking_savings_csv(sample_bytes, account)
     tx = next(tx for tx in result.transactions if "Interest" in tx.description)
-    assert tx.category == "INTEREST_EARNED"
+    assert tx.bank_category == "INTEREST_EARNED"
     tx = next(tx for tx in result.transactions if "Institutional" in tx.description)
-    assert tx.category == "DIRECT_DEPOSIT"
+    assert tx.bank_category == "DIRECT_DEPOSIT"
 
 
 # ── Balance snapshot ──────────────────────────────────────────────────────────
