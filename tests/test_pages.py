@@ -225,8 +225,8 @@ def test_upload_page_has_progress_and_controls(client):
     assert 'id="uploadProgressWrap"' in html
     assert 'id="uploadProgressText"' in html
     assert 'id="uploadProgressBar"' in html
-    assert 'id="accountSelect"' in html
-    assert 'id="importerSelect"' in html
+    assert 'id="accountSelect"' not in html  # removed; account selected per-file
+    assert 'id="importerSelect"' not in html  # removed; importer auto-fills from account default
     assert 'id="uploadBtn"' in html
     assert 'id="resultModal"' in html
 

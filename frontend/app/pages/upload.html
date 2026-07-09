@@ -43,26 +43,6 @@
             <input type="file" id="fileInput" accept=".csv" multiple class="d-none" />
           </div>
 
-          <!-- Defaults (applied to newly added files; each file can be overridden below) -->
-          <div class="row g-3 align-items-end mb-3">
-            <div class="col-12 col-sm-6">
-              <label class="form-label fw-medium mb-1" for="accountSelect">
-                Default account <span class="text-muted fw-normal small">— applied to new files</span>
-              </label>
-              <select id="accountSelect" class="form-select">
-                <option value="">Select account…</option>
-              </select>
-            </div>
-            <div class="col-12 col-sm-6">
-              <label class="form-label fw-medium mb-1" for="importerSelect">
-                Default file format <span class="text-muted fw-normal small">— applied to new files</span>
-              </label>
-              <select id="importerSelect" class="form-select">
-                <option value="">Select importer…</option>
-              </select>
-            </div>
-          </div>
-
           <!-- File list (per-file account + importer) -->
           <ul id="fileList" class="list-group mb-3"></ul>
 

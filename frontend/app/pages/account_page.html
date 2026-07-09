@@ -204,21 +204,37 @@
                 </div>
               </div>
             </div>
+            <div class="accordion-item">
+              <div class="accordion-header d-flex align-items-center pe-3">
+                <h2 class="h6 mb-0 flex-grow-1">
+                  <button class="accordion-button collapsed py-3 text-uppercase text-muted fw-semibold" type="button"
+                          data-bs-toggle="collapse" data-bs-target="#collapseDetailImporter"
+                          aria-expanded="false" aria-controls="collapseDetailImporter">
+                    Importer
+                  </button>
+                </h2>
+                <span id="detailImporterBadge" class="badge rounded-pill bg-success d-none"></span>
+              </div>
+              <div id="collapseDetailImporter" class="accordion-collapse collapse">
+                <div class="accordion-body">
+                  <label class="form-label small" for="detailImporter">Default file format</label>
+                  <select id="detailImporter" name="default_importer" class="form-select" disabled>
+                    <option value="">None</option>
+                  </select>
+                </div>
+              </div>
+            </div>
           </div>
         </form>
       </div>
       <div class="modal-footer">
-        <div id="detailsFooter" class="d-flex justify-content-end w-100">
-          <div class="btn-group" role="group">
-            <button type="button" class="btn btn-danger" id="detailsDeactivateBtn" onclick="deactivateFromDetails()">Deactivate</button>
-            <button type="button" class="btn btn-primary" onclick="enterEditMode()">Edit</button>
-          </div>
+        <div id="detailsFooter" class="d-flex justify-content-end w-100 gap-2">
+          <button type="button" class="btn btn-danger" id="detailsDeactivateBtn" onclick="deactivateFromDetails()">Deactivate</button>
+          <button type="button" class="btn btn-primary" onclick="enterEditMode()">Edit</button>
         </div>
-        <div id="detailsEditFooter" class="d-flex w-100 justify-content-end d-none">
-          <div class="btn-group" role="group">
-            <button type="button" class="btn btn-secondary" onclick="exitEditMode()">Discard</button>
-            <button type="button" class="btn btn-success" onclick="saveDetailsForm()">Save</button>
-          </div>
+        <div id="detailsEditFooter" class="d-flex w-100 justify-content-end gap-2 d-none">
+          <button type="button" class="btn btn-secondary" onclick="exitEditMode()">Discard</button>
+          <button type="button" class="btn btn-success" onclick="saveDetailsForm()">Save</button>
         </div>
       </div>
     </div>

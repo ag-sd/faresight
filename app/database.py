@@ -49,6 +49,7 @@ def migrate_db() -> None:
             ("source_amount",     "REAL"),
             ("source_frequency",  "VARCHAR(10)"),
             ("current_balance",   "REAL"),
+            ("default_importer",  "VARCHAR(100)"),
         ]
         for col_name, col_def in new_columns:
             if col_name not in existing:
@@ -169,10 +170,12 @@ def migrate_db() -> None:
             ))
 
         # ── transaction_classification_rules ──────────────────────────────────
-        # Drop-and-recreate to enforce the UNIQUE constraint on (description, category, importer).
-        # SQLite cannot ADD CONSTRAINT to an existing table, so we clear and rebuild.
-        conn.execute(text("DROP TABLE IF EXISTS transaction_classification_rules"))
-        conn.execute(text("""
+        # Enforce the UNIQUE constraint on (description, category, importer).
+        # SQLite cannot ADD CONSTRAINT to an existing table, so a legacy table
+        # (pre-constraint) is rebuilt via rename → create → copy → drop. Tables
+        # that already carry the constraint are left untouched — user rules
+        # must survive restarts.
+        rules_ddl = """
             CREATE TABLE transaction_classification_rules (
                 id          INTEGER PRIMARY KEY,
                 description VARCHAR(255) NOT NULL,
@@ -181,7 +184,46 @@ def migrate_db() -> None:
                 created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (description, category, importer)
             )
-        """))
+        """
+        rules_exists = conn.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'transaction_classification_rules'"
+        )).scalar()
+        if not rules_exists:
+            conn.execute(text(rules_ddl))
+        else:
+            has_unique = False
+            for idx in conn.execute(text(
+                "PRAGMA index_list('transaction_classification_rules')"
+            )).fetchall():
+                # index_list rows: (seq, name, unique, origin, partial)
+                if not idx[2]:
+                    continue
+                cols = {r[2] for r in conn.execute(
+                    text(f"PRAGMA index_info('{idx[1]}')")
+                ).fetchall()}
+                if cols == {"description", "category", "importer"}:
+                    has_unique = True
+                    break
+            if not has_unique:
+                old_cols = {r[1] for r in conn.execute(text(
+                    "PRAGMA table_info(transaction_classification_rules)"
+                )).fetchall()}
+                shared = [c for c in ("id", "description", "category", "importer", "created_at")
+                          if c in old_cols]
+                col_list = ", ".join(shared)
+                conn.execute(text(
+                    "ALTER TABLE transaction_classification_rules "
+                    "RENAME TO transaction_classification_rules_old"
+                ))
+                conn.execute(text(rules_ddl))
+                # OR IGNORE: rows that now collide on the UNIQUE key collapse to
+                # the first occurrence (lowest id).
+                conn.execute(text(
+                    f"INSERT OR IGNORE INTO transaction_classification_rules ({col_list}) "
+                    f"SELECT {col_list} FROM transaction_classification_rules_old"
+                ))
+                conn.execute(text("DROP TABLE transaction_classification_rules_old"))
 
         # ── categories ────────────────────────────────────────────────────────
         conn.execute(text("""

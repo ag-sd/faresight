@@ -62,8 +62,10 @@ def _dedupe_rows(db: Session, txs) -> tuple[list, int]:
 
 
 def _log_balance(db: Session, account_id: int, balance: float, as_of):
-    """Append a point to balance_history — one per import that changes a balance,
-    enabling net-worth-over-time charting later."""
+    """Append a point to balance_history — an append-only audit log of every
+    balance an import stated or derived, enabling net-worth-over-time charting
+    later. Stale snapshots (older as_of than what's recorded) are logged too;
+    they are legitimate history even when they don't win current_balance."""
     db.add(BalanceHistory(account_id=account_id, balance=balance, as_of=as_of))
 
 
@@ -469,8 +471,21 @@ async def import_bulk(
         # double-count. This is what gives snapshot-less accounts (credit
         # cards) a derived balance.
         if result.snapshot is not None:
-            account.current_balance = result.snapshot.amount
-            _log_balance(db, account_id, account.current_balance, result.snapshot.as_of)
+            # Set-to-latest arbitration: only a snapshot at least as new as the
+            # account's most recent recorded balance may move current_balance —
+            # an out-of-order backfill of an older statement must not regress
+            # it. Ties win, so re-uploading (or correcting) the same-dated
+            # statement re-applies. Flush first: autoflush is off and earlier
+            # files in this request may have logged history.
+            db.flush()
+            latest = (
+                db.query(func.max(BalanceHistory.as_of))
+                .filter(BalanceHistory.account_id == account_id)
+                .scalar()
+            )
+            if latest is None or result.snapshot.as_of >= latest:
+                account.current_balance = result.snapshot.amount
+            _log_balance(db, account_id, result.snapshot.amount, result.snapshot.as_of)
         elif to_insert:
             account.current_balance = round((account.current_balance or 0.0) + inserted_delta, 2)
             _log_balance(db, account_id, account.current_balance, max(tx.date for tx, _ in to_insert))

@@ -12,13 +12,10 @@ let _topCardPageLimit = 5;  // overwritten from /api/config at boot
 function fileKey(f) { return f.name + ':' + f.size; }
 
 function addFiles(fileList) {
-  // New files inherit the current default account/importer as their starting choice.
-  const defAccount = document.getElementById('accountSelect').value;
-  const defImporter = document.getElementById('importerSelect').value;
   for (const f of fileList) {
     const key = fileKey(f);
     if (!fileSet.has(key)) {
-      fileSet.set(key, { file: f, accountId: defAccount, importerName: defImporter });
+      fileSet.set(key, { file: f, accountId: '', importerName: '' });
     }
   }
   renderFileList();
@@ -65,19 +62,24 @@ function renderFileList() {
     name.innerHTML = '<i class="fa-regular fa-file me-2 text-muted"></i>';
     name.append(entry.file.name);  // text node — browser escapes special characters automatically
 
-    const acctOpts = accountsList.map(a => ({ value: a.id, label: `${a.bank} — ${a.name}` }));
-    const acctSel = buildSelect(acctOpts, entry.accountId, 'Account…', (e) => {
-      entry.accountId = e.target.value;
-      updateUploadBtn();
-    });
-    acctSel.style.maxWidth = '14rem';
-
     const impOpts = importersList.map(n => ({ value: n, label: n }));
     const impSel = buildSelect(impOpts, entry.importerName, 'Importer…', (e) => {
       entry.importerName = e.target.value;
       updateUploadBtn();
     });
     impSel.style.maxWidth = '14rem';
+
+    const acctOpts = accountsList.map(a => ({ value: a.id, label: `${a.bank} — ${a.name}` }));
+    const acctSel = buildSelect(acctOpts, entry.accountId, 'Account…', (e) => {
+      entry.accountId = e.target.value;
+      const acct = accountsList.find(a => String(a.id) === e.target.value);
+      if (acct?.default_importer) {
+        entry.importerName = acct.default_importer;
+        impSel.value = acct.default_importer;
+      }
+      updateUploadBtn();
+    });
+    acctSel.style.maxWidth = '14rem';
 
     const btn = document.createElement('button');
     btn.className = 'btn btn-sm btn-outline-danger py-0 px-2 flex-shrink-0';
@@ -566,23 +568,7 @@ async function init() {
   importersList = importers;
 
   const accountMap = {};
-  const acctSel = document.getElementById('accountSelect');
-  accounts.forEach(a => {
-    accountMap[a.id] = `${a.bank} — ${a.name}`;
-    const opt = document.createElement('option');
-    opt.value = a.id;
-    opt.textContent = `${a.bank} — ${a.name} (${a.account_number})`;
-    acctSel.appendChild(opt);
-  });
-
-  const impSel = document.getElementById('importerSelect');
-  importers.forEach(name => {
-    const opt = document.createElement('option');
-    opt.value = name;
-    opt.textContent = name;
-    impSel.appendChild(opt);
-  });
-
+  accounts.forEach(a => { accountMap[a.id] = `${a.bank} — ${a.name}`; });
   return accountMap;
 }
 

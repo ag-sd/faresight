@@ -101,6 +101,7 @@ class Account(Base):
         Enum(SourceFrequency), nullable=True
     )
     current_balance: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    default_importer: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
 
 class FileImport(Base):

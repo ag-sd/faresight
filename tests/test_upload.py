@@ -460,6 +460,90 @@ def test_import_savings_ascending_order_sets_newest_balance(client):
     assert acc["current_balance"] == 11500.00
 
 
+SAVINGS_HEADER = (
+    b"Account Number,Transaction Description,Transaction Date,Transaction Type,"
+    b"Transaction Amount,Balance\n"
+)
+
+
+def _upload_savings(client, acct, filename, rows: bytes):
+    r = client.post(
+        "/api/transactions/import-bulk",
+        data={"account_id": acct["id"], "importer": SAVINGS_IMPORTER},
+        files=[("files", (filename, SAVINGS_HEADER + rows, "text/csv"))],
+    )
+    assert r.status_code == 200, r.text
+    return r.json()[0]
+
+
+def _balance_of(client, acct):
+    return next(a for a in client.get("/api/accounts").json() if a["id"] == acct["id"])["current_balance"]
+
+
+def test_older_statement_does_not_regress_balance(client):
+    """Out-of-order backfill: an older statement's snapshot must not overwrite
+    the balance set by a newer one (BalanceSnapshot contract: newest wins)."""
+    acct = _make_savings_account(client)
+    _upload_savings(client, acct, "june.csv",
+                    b"1543,June Deposit,06/23/26,Credit,1000,11500.00\n")
+    assert _balance_of(client, acct) == 11500.00
+
+    result = _upload_savings(client, acct, "april.csv",
+                             b"1543,April Withdrawal,04/14/26,Debit,500,9000.00\n")
+    assert result["imported"] == 1  # backfilled rows still import
+    assert _balance_of(client, acct) == 11500.00  # balance did not regress
+
+
+def test_newer_statement_still_updates_balance(client):
+    acct = _make_savings_account(client)
+    _upload_savings(client, acct, "april.csv",
+                    b"1543,April Withdrawal,04/14/26,Debit,500,9000.00\n")
+    assert _balance_of(client, acct) == 9000.00
+
+    _upload_savings(client, acct, "june.csv",
+                    b"1543,June Deposit,06/23/26,Credit,1000,11500.00\n")
+    assert _balance_of(client, acct) == 11500.00
+
+
+def test_equal_as_of_snapshot_reapplies(client):
+    """Tie behavior: a snapshot dated the same as the latest recorded one wins,
+    so a corrected export for the same date re-applies."""
+    acct = _make_savings_account(client)
+    _upload_savings(client, acct, "first.csv",
+                    b"1543,June Deposit,06/23/26,Credit,1000,11500.00\n")
+    _upload_savings(client, acct, "corrected.csv",
+                    b"1543,June Deposit Corrected,06/23/26,Credit,1000,11600.00\n")
+    assert _balance_of(client, acct) == 11600.00
+
+
+def test_stale_snapshot_still_logged_to_history(client):
+    """balance_history is an append-only audit log — a stale snapshot that loses
+    the current_balance arbitration is still recorded at its own as_of."""
+    from datetime import date
+    from app.models import BalanceHistory
+    from tests.conftest import TestingSession
+
+    acct = _make_savings_account(client)
+    _upload_savings(client, acct, "june.csv",
+                    b"1543,June Deposit,06/23/26,Credit,1000,11500.00\n")
+    _upload_savings(client, acct, "april.csv",
+                    b"1543,April Withdrawal,04/14/26,Debit,500,9000.00\n")
+
+    db = TestingSession()
+    try:
+        points = {
+            (h.as_of, h.balance)
+            for h in db.query(BalanceHistory).filter_by(account_id=acct["id"])
+        }
+    finally:
+        db.close()
+    assert points == {
+        (date(2026, 6, 23), 11500.00),
+        (date(2026, 4, 14), 9000.00),
+    }
+    assert _balance_of(client, acct) == 11500.00
+
+
 # ── Binary / parse-failure resilience ────────────────────────────────────────
 
 BINARY_BYTES = b"\xff\xfe\x00binary\x00junk"

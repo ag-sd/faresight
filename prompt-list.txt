@@ -222,10 +222,30 @@ Group several expenses together (Ex: Florida Travel)
 
 How do we incorporate Trading activity like the below files into this model.
 
+associate the importer with an account so that i dont have to pick it up twice
 
 
+bofa_checking_stmt_to_7-6-2026.csv
+474 imported
+2 errors
+Show errors
+Row 183: could not convert string to float: '2025"; Conf# hizgoe96z"'
+Row 208: could not convert string to float: 'Sabor a Mexico'
 
 
+delete from transactions
+;
+update accounts set current_balance=NULL
+;
+delete from file_imports
+;
+delete from balance_history
+;
+
+We should update the Account object so that a user can add a file importer to the account directly. We should update
+the account edit modal to add an accordion that captures source in one panel and the account importer in another
+the accordion should be collapsed by default. Lastly lets stop using a button group for the save discard and deactivate buttons. Lets
+use ordinary bootstrap buttons but keep the colors
 
 
 

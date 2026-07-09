@@ -165,6 +165,120 @@ def test_migrate_adds_reference_number():
         Base.metadata.drop_all(bind=engine)
 
 
+def _rules_unique_index_present(conn) -> bool:
+    """True if transaction_classification_rules carries the UNIQUE
+    (description, category, importer) constraint."""
+    for idx in conn.execute(text(
+        "PRAGMA index_list('transaction_classification_rules')"
+    )).fetchall():
+        if not idx[2]:  # unique flag
+            continue
+        cols = {r[2] for r in conn.execute(
+            text(f"PRAGMA index_info('{idx[1]}')")
+        ).fetchall()}
+        if cols == {"description", "category", "importer"}:
+            return True
+    return False
+
+
+def test_migrate_preserves_rules():
+    """Rules on a correctly-shaped table survive migrate_db — the migration must
+    be a no-op when the UNIQUE constraint is already present (regression: the
+    table used to be dropped and recreated on every boot)."""
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO transaction_classification_rules "
+                "(description, category, importer) "
+                "VALUES ('COFFEE SHOP', 'Food', 'Chase Credit Card')"
+            ))
+            rule_id = conn.execute(text(
+                "SELECT id FROM transaction_classification_rules"
+            )).scalar()
+
+        migrate_db()
+        migrate_db()  # idempotent — second run is a no-op
+
+        with engine.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT id, description, category, importer "
+                "FROM transaction_classification_rules"
+            )).fetchall()
+            assert rows == [(rule_id, "COFFEE SHOP", "Food", "Chase Credit Card")]
+            assert _rules_unique_index_present(conn)
+    finally:
+        Base.metadata.drop_all(bind=engine)
+
+
+def test_migrate_upgrades_legacy_rules_table():
+    """A legacy table without the UNIQUE constraint is rebuilt in place: rows
+    are preserved, duplicates collapse to the first occurrence, and the
+    constraint lands. Second run is a no-op."""
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE transaction_classification_rules"))
+            conn.execute(text(
+                "CREATE TABLE transaction_classification_rules ("
+                " id INTEGER PRIMARY KEY,"
+                " description VARCHAR(255) NOT NULL,"
+                " category VARCHAR(100) NOT NULL,"
+                " importer VARCHAR(100) NOT NULL,"
+                " created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+            ))
+            for desc, cat in (("COFFEE SHOP", "Food"),
+                              ("GYM", "Health"),
+                              ("COFFEE SHOP", "Food")):  # exact duplicate
+                conn.execute(text(
+                    "INSERT INTO transaction_classification_rules "
+                    "(description, category, importer) "
+                    "VALUES (:d, :c, 'Chase Credit Card')"
+                ), {"d": desc, "c": cat})
+
+        migrate_db()
+        migrate_db()  # idempotent — second run is a no-op
+
+        with engine.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT id, description, category "
+                "FROM transaction_classification_rules ORDER BY id"
+            )).fetchall()
+            # Duplicate collapsed to the first occurrence (lowest id).
+            assert rows == [(1, "COFFEE SHOP", "Food"), (2, "GYM", "Health")]
+            assert _rules_unique_index_present(conn)
+            # Rebuild scaffolding cleaned up.
+            leftover = conn.execute(text(
+                "SELECT 1 FROM sqlite_master "
+                "WHERE name = 'transaction_classification_rules_old'"
+            )).scalar()
+            assert leftover is None
+    finally:
+        Base.metadata.drop_all(bind=engine)
+
+
+def test_migrate_creates_rules_table_when_absent():
+    """A DB predating the rules feature gets the table with the constraint."""
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE transaction_classification_rules"))
+
+        migrate_db()
+
+        with engine.connect() as conn:
+            cols = {r[1] for r in conn.execute(text(
+                "PRAGMA table_info(transaction_classification_rules)"
+            ))}
+            assert {"id", "description", "category", "importer", "created_at"} <= cols
+            assert _rules_unique_index_present(conn)
+    finally:
+        Base.metadata.drop_all(bind=engine)
+
+
 def test_migrate_creates_balance_history():
     """balance_history is created on a legacy DB that predates it, and the
     migration is idempotent (safe to run on every boot)."""

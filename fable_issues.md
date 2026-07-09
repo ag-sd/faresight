@@ -17,7 +17,7 @@ to an Opus agent independently.
 
 ## Critical — data loss / data corruption
 
-- [ ] ### 1. Classification rules are wiped on every app startup
+- [x] ### 1. Classification rules are wiped on every app startup
 
   **Files:** `app/database.py:174` (inside `migrate_db()`)
 
@@ -75,7 +75,7 @@ to an Opus agent independently.
   > untouched; forced push via the API path → succeeds and claims the lock; stale foreign lock →
   > push allowed. Run the full suite before declaring done.
 
-- [ ] ### 3. Balance snapshots have no `as_of` arbitration — older statements regress the balance
+- [x] ### 3. Balance snapshots have no `as_of` arbitration — older statements regress the balance
 
   **Files:** `app/routers/transactions.py:471-473` (`import_bulk`), `app/models.py:160` (`BalanceSnapshot`)
 

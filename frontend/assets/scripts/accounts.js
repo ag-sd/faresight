@@ -10,6 +10,7 @@ let _detailsAccount = null;
 let accountsTable, transfersTable, activityTable;
 let _allAccounts = [];
 let _bankLogos = {};
+let _importers = [];
 let _topCardPageLimit = 5;  // overwritten from /api/config at boot
 
 const ACCOUNT_TYPE_LABELS = {
@@ -250,6 +251,22 @@ function openDetailsAccount(account) {
   document.getElementById('detailSourceAmount').value = account.source_amount ?? '';
   document.getElementById('detailSourceFreq').value = account.source_frequency ?? '';
 
+  // Importer accordion
+  const impSel = document.getElementById('detailImporter');
+  impSel.innerHTML = '<option value="">None</option>';
+  _importers.forEach(name => {
+    impSel.insertAdjacentHTML('beforeend', `<option value="${esc(name)}">${esc(name)}</option>`);
+  });
+  impSel.value = account.default_importer ?? '';
+  const impBadge = document.getElementById('detailImporterBadge');
+  impBadge.textContent = account.default_importer ?? '';
+  impBadge.classList.toggle('d-none', !account.default_importer);
+  const _impCollapse = document.getElementById('collapseDetailImporter');
+  _impCollapse.classList.remove('show');
+  const _impBtn = document.querySelector('[data-bs-target="#collapseDetailImporter"]');
+  _impBtn.classList.add('collapsed');
+  _impBtn.setAttribute('aria-expanded', 'false');
+
   // Badge: show ACTIVE pill when a source transfer is configured
   document.getElementById('detailSourceBadge').classList.toggle('d-none', !account.source_account_id);
   // Accordion: always reset to collapsed on each open
@@ -302,6 +319,7 @@ async function saveDetailsForm() {
     source_account_id: sourceId,
     source_amount: sourceId && sourceAmtRaw ? parseFloat(sourceAmtRaw) : null,
     source_frequency: sourceId ? (fd.get('source_frequency') || null) : null,
+    default_importer: fd.get('default_importer') || null,
   };
   try {
     await api(`/api/accounts/${_detailsAccount.id}`, { method: 'PATCH', body: JSON.stringify(body) });
@@ -370,6 +388,7 @@ async function submitAccountForm() {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 api('/api/accounts/bank-logos').then(m => { _bankLogos = m; });
+api('/api/importers').then(list => { _importers = list; });
 (async () => {
   // Page limit must be known before the tables are constructed.
   try {

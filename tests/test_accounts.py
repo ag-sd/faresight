@@ -298,6 +298,28 @@ def test_list_accounts_response_has_name_not_nickname(client):
     assert "nickname" not in data[0]
 
 
+# ── Default importer ──────────────────────────────────────────────────────────
+
+def test_create_with_default_importer(client):
+    a = _make_account(client, default_importer="Capital One Credit Card")
+    assert a["default_importer"] == "Capital One Credit Card"
+
+
+def test_create_without_default_importer(client):
+    a = _make_account(client)
+    assert a["default_importer"] is None
+
+
+def test_patch_default_importer(client):
+    a = _make_account(client)
+    r = client.patch(f"/api/accounts/{a['id']}", json={"default_importer": "Chase Credit Card"})
+    assert r.status_code == 200
+    assert r.json()["default_importer"] == "Chase Credit Card"
+    r2 = client.patch(f"/api/accounts/{a['id']}", json={"default_importer": None})
+    assert r2.status_code == 200
+    assert r2.json()["default_importer"] is None
+
+
 # ── Bank logos ────────────────────────────────────────────────────────────────
 
 def test_get_bank_logos(client):
