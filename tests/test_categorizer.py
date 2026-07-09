@@ -143,13 +143,14 @@ def test_apply_missing_row_falls_back():
 
 def test_build_prompt_includes_batch_and_categories():
     prompt = cz.build_prompt(
-        [{"id": 0, "description": "Blue Bottle Coffee", "amount": -5.0}],
+        [{"id": 0, "description": "Blue Bottle Coffee", "amount": -5.0, "bank_category_hint": "Coffee"}],
         _CATEGORY_BLOCK,
     )
     assert "Blue Bottle Coffee" in prompt
     for name, *_ in DEFAULT_CATEGORIES:
         assert f"- {name}:" in prompt  # rendered as a described allow-list line
-    assert "Score honestly" in prompt  # rubric present — not the old stub
+    assert "Score honestly" in prompt  # rubric present
+    assert "bank_category_hint" in prompt  # hint field included
 
 
 def test_categories_db_backed_and_all_fields_present():
@@ -166,13 +167,67 @@ def test_categories_db_backed_and_all_fields_present():
         db.close()
 
 
+def test_build_prompt_hint_normalization():
+    # "Uncategorized" and None become empty string; a real category passes through.
+    cases = [
+        ("Uncategorized", ""),
+        (None, ""),
+        ("Food", "Food"),
+    ]
+    for category, expected_hint in cases:
+        hint = category if category and category != "Uncategorized" else ""
+        assert hint == expected_hint, f"category={category!r} expected hint={expected_hint!r}"
+
+
+def test_categorize_pending_passes_bank_category_hint(monkeypatch):
+    """Items sent to build_prompt include bank_category_hint normalized from category."""
+    monkeypatch.setattr(cz, "ensure_ollama_running", lambda: None)
+    captured = {}
+
+    def capture_prompt(prompt):
+        captured["prompt"] = prompt
+        batch = json.loads(prompt.split("TRANSACTIONS:\n", 1)[1])
+        return json.dumps({
+            "results": [{"id": it["id"], "category": "Shopping", "confidence": 6} for it in batch]
+        })
+
+    monkeypatch.setattr(cz, "_generate", capture_prompt)
+
+    db = TestingSession()
+    try:
+        from app.models import FileImport
+        fi = FileImport(filename="test.csv", rows_seen=2, rows_persisted=0)
+        db.add(fi)
+        db.flush()
+        from app.models import Transaction
+        from datetime import date as _date
+        # One row with a real bank category, one with "Uncategorized"
+        row_with_hint = Transaction(
+            date=_date(2026, 1, 1), description="Trader Joes", amount=-48.0,
+            category="Food", model_confidence=cz.PENDING_CONFIDENCE, file_id=fi.id,
+        )
+        row_no_hint = Transaction(
+            date=_date(2026, 1, 1), description="SQ *MERCHANT", amount=-12.0,
+            category="Uncategorized", model_confidence=cz.PENDING_CONFIDENCE, file_id=fi.id,
+        )
+        db.add_all([row_with_hint, row_no_hint])
+        db.commit()
+
+        cz._categorize_pending(db)
+
+        batch = json.loads(captured["prompt"].split("TRANSACTIONS:\n", 1)[1])
+        hints = {item["description"]: item["bank_category_hint"] for item in batch}
+        assert hints["Trader Joes"] == "Food"
+        assert hints["SQ *MERCHANT"] == ""
+    finally:
+        db.close()
+
+
 def test_build_prompt_uses_split_transfer_categories():
-    # "Transfers & Fees" was split into four distinct labels; none of the old label present.
-    prompt = cz.build_prompt([{"id": 0, "description": "x", "amount": -1.0}], _CATEGORY_BLOCK)
-    assert "Transfers & Fees" not in prompt
+    # "Transfers & Fees" was split into four distinct labels; none of the old label is a category.
+    assert "Transfers & Fees" not in _ALLOWED
     for category in ("Transfers", "Fees", "Interest Income", "Interest Paid"):
         assert category in _ALLOWED
-        assert category in prompt
 
 
 def test_apply_other_from_model_preserves_confidence():

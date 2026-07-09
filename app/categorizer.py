@@ -156,6 +156,13 @@ def build_prompt(batch: list[dict], category_block: str) -> str:
         "Use the merchant/description and the amount (negative = money out, positive =\n"
         "money in) as signals.\n"
         "\n"
+        "Each transaction may include a \"bank_category_hint\" — a category supplied by the\n"
+        "bank. Treat this ONLY as a hint. It is often useful but is NOT authoritative: banks\n"
+        "use different, coarser categories than ours and are sometimes wrong. Weigh it\n"
+        "against the description and amount. If the description clearly indicates a different\n"
+        "category, TRUST THE DESCRIPTION and override the hint. The hint may also be empty\n"
+        "or missing — if so, ignore it and categorize from the description alone.\n"
+        "\n"
         "ALLOWED CATEGORIES (use these labels exactly):\n"
         f"{category_block}\n"
         "\n"
@@ -166,19 +173,23 @@ def build_prompt(batch: list[dict], category_block: str) -> str:
         "- 1-3 = weak guess; little to go on.\n"
         "- 0 = no basis to categorize (assign \"Other\").\n"
         "Score honestly. A wrong high-confidence score is worse than an honest low one.\n"
+        "A hint that agrees with a clear description can raise confidence; a hint that\n"
+        "conflicts with a clear description should NOT lower your confidence in the\n"
+        "description.\n"
         "\n"
         "RULES:\n"
         "- Pick the single best category. Do not invent new labels.\n"
-        "- A positive amount is usually Income, Interest Income, or Transfers, not a spending category.\n"
+        "- A positive amount is usually Income or Transfers & Fees, not a spending category.\n"
+        "- The bank hint is advisory only — never output a label just because the bank did.\n"
         "- If genuinely unsure, use \"Other\" and a low confidence score.\n"
         "\n"
         "EXAMPLES:\n"
-        "Input: {\"id\": 1, \"description\": \"TRADER JOE'S #542\", \"amount\": -48.30}\n"
+        "Input: {\"id\": 1, \"description\": \"TRADER JOE'S #542\", \"amount\": -48.30, \"bank_category_hint\": \"Food\"}\n"
         "Output: {\"id\": 1, \"category\": \"Groceries\", \"confidence\": 10}\n"
-        "Input: {\"id\": 2, \"description\": \"SQ *MERCHANT\", \"amount\": -12.00}\n"
-        "Output: {\"id\": 2, \"category\": \"Other\", \"confidence\": 2}\n"
-        "Input: {\"id\": 3, \"description\": \"PAYROLL DIRECT DEP ACME CORP\", \"amount\": 3200.00}\n"
-        "Output: {\"id\": 3, \"category\": \"Income\", \"confidence\": 10}\n"
+        "Input: {\"id\": 2, \"description\": \"SHELL OIL 5521\", \"amount\": -52.10, \"bank_category_hint\": \"General Merchandise\"}\n"
+        "Output: {\"id\": 2, \"category\": \"Transportation\", \"confidence\": 9}\n"
+        "Input: {\"id\": 3, \"description\": \"SQ *MERCHANT\", \"amount\": -12.00, \"bank_category_hint\": \"\"}\n"
+        "Output: {\"id\": 3, \"category\": \"Other\", \"confidence\": 2}\n"
         "\n"
         "Categorize these transactions. Respond with ONLY a JSON object in this exact shape,\n"
         "no prose, no markdown:\n"
@@ -340,7 +351,12 @@ def _categorize_pending(db) -> int:
         ]
         index = {i: tx for i, tx in enumerate(txs)}
         items = [
-            {"id": i, "description": tx.description, "amount": tx.amount}
+            {
+                "id": i,
+                "description": tx.description,
+                "amount": tx.amount,
+                "bank_category_hint": tx.category if tx.category and tx.category != "Uncategorized" else "",
+            }
             for i, tx in enumerate(txs)
         ]
 
