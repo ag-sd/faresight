@@ -324,7 +324,7 @@ def _categorize_pending(db) -> int:
     cat_data = _load_category_data(db)
     rows = db.query(Transaction).filter(
         Transaction.model_confidence == PENDING_CONFIDENCE
-    ).all()
+    ).order_by(Transaction.date.desc()).all()
     if not rows:
         logger.info("Categorizer: no pending transactions")
         return 0

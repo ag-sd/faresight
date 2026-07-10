@@ -472,6 +472,50 @@ def test_categorize_pending_checks_ollama_per_batch(monkeypatch):
         db.close()
 
 
+def test_categorize_pending_most_recent_first(monkeypatch):
+    """Pending rows are sent to Ollama newest-date-first."""
+    import json as _json
+    from app.models import FileImport
+
+    captured = {}
+
+    def capture_generate(prompt):
+        # Extract the TRANSACTIONS JSON block from the end of the prompt.
+        marker = "TRANSACTIONS:\n"
+        batch = _json.loads(prompt[prompt.index(marker) + len(marker):])
+        captured["order"] = [item["description"] for item in batch]
+        # Return valid results for both rows.
+        return _json.dumps({"results": [
+            {"id": item["id"], "category": "Shopping", "confidence": 6}
+            for item in batch
+        ]})
+
+    monkeypatch.setattr(cz, "ensure_ollama_running", lambda: None)
+    monkeypatch.setattr(cz, "_generate", capture_generate)
+
+    db = TestingSession()
+    try:
+        fi = FileImport(filename="test.csv", rows_seen=2, rows_persisted=0)
+        db.add(fi)
+        db.flush()
+        older = Transaction(
+            date=date(2026, 1, 1), description="OLD", amount=-5.0,
+            bank_category="Uncategorized", model_confidence=PENDING_CONFIDENCE, file_id=fi.id,
+        )
+        newer = Transaction(
+            date=date(2026, 6, 1), description="NEW", amount=-5.0,
+            bank_category="Uncategorized", model_confidence=PENDING_CONFIDENCE, file_id=fi.id,
+        )
+        db.add_all([older, newer])
+        db.commit()
+
+        cz._categorize_pending(db)
+    finally:
+        db.close()
+
+    assert captured["order"] == ["NEW", "OLD"]
+
+
 # ── _main_loop (worker entrypoint loop) ─────────────────────────────────────────
 
 class _RecordingSession:
