@@ -83,6 +83,7 @@ class AccountUpdate(BaseModel):
     source_amount: Optional[float] = None
     source_frequency: Optional[SourceFrequency] = None
     default_importer: Optional[str] = None
+    current_balance: Optional[float] = None
 
 
 class AccountOut(AccountCreate):

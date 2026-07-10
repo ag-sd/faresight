@@ -335,6 +335,50 @@ def test_patch_unknown_default_importer_returns_422(client):
     assert r.status_code == 422
 
 
+# ── Manual balance edit ───────────────────────────────────────────────────────
+
+def test_patch_current_balance(client):
+    a = _make_account(client)
+    r = client.patch(f"/api/accounts/{a['id']}", json={"current_balance": 5000.0})
+    assert r.status_code == 200
+    assert r.json()["current_balance"] == 5000.0
+
+
+def test_patch_current_balance_writes_history(client):
+    from datetime import date
+    from app.models import BalanceHistory
+    from tests.conftest import TestingSession
+
+    a = _make_account(client)
+    client.patch(f"/api/accounts/{a['id']}", json={"current_balance": 5000.0})
+
+    db = TestingSession()
+    try:
+        rows = db.query(BalanceHistory).filter(BalanceHistory.account_id == a["id"]).all()
+        assert len(rows) == 1
+        assert rows[0].balance == 5000.0
+        assert rows[0].as_of == date.today()
+    finally:
+        db.close()
+
+
+def test_patch_balance_always_writes_history(client):
+    """A manual balance edit always appends a history point, even when the value is unchanged."""
+    from app.models import BalanceHistory
+    from tests.conftest import TestingSession
+
+    a = _make_account(client, current_balance=1000.0)
+    client.patch(f"/api/accounts/{a['id']}", json={"current_balance": 1000.0})
+
+    db = TestingSession()
+    try:
+        rows = db.query(BalanceHistory).filter(BalanceHistory.account_id == a["id"]).all()
+        assert len(rows) == 1
+        assert rows[0].balance == 1000.0
+    finally:
+        db.close()
+
+
 # ── Bank logos ────────────────────────────────────────────────────────────────
 
 def test_get_bank_logos(client):

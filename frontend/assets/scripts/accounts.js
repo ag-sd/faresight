@@ -242,6 +242,8 @@ function openDetailsAccount(account) {
   document.getElementById('detailNickname').value = account.name;
   document.getElementById('detailNumber').value = account.account_number;
   document.getElementById('detailType').value = account.account_type;
+  document.getElementById('detailBalance').value =
+    account.current_balance != null ? account.current_balance : '';
   document.getElementById('detailNotes').value = account.notes ?? '';
 
   // Populate source select with all accounts (incl. inactive) for display
@@ -315,11 +317,13 @@ async function saveDetailsForm() {
   const sourceIdRaw = fd.get('source_account_id');
   const sourceAmtRaw = fd.get('source_amount');
   const sourceId = sourceIdRaw ? parseInt(sourceIdRaw, 10) : null;
+  const balRaw = fd.get('current_balance');
   const body = {
     bank: fd.get('bank'),
     name: fd.get('name'),
     account_number: fd.get('account_number'),
     account_type: fd.get('account_type'),
+    current_balance: balRaw !== '' && balRaw != null ? parseFloat(balRaw) : null,
     notes: fd.get('notes') || null,
     source_account_id: sourceId,
     source_amount: sourceId && sourceAmtRaw ? parseFloat(sourceAmtRaw) : null,

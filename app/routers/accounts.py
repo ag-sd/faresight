@@ -1,10 +1,12 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.config import BANK_LOGOS
 from app.database import get_db
 from app.importers import IMPORTERS
-from app.models import Account
+from app.models import Account, BalanceHistory
 from app.schemas import AccountCreate, AccountOut, AccountUpdate
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
@@ -61,6 +63,10 @@ def update_account(account_id: int, body: AccountUpdate, db: Session = Depends(g
             raise HTTPException(status_code=422, detail="Source account not found")
         if not src.is_active:
             raise HTTPException(status_code=422, detail="Source account is not active")
+    if "current_balance" in updates:
+        new_bal = updates.pop("current_balance")
+        account.current_balance = new_bal
+        db.add(BalanceHistory(account_id=account_id, balance=new_bal, as_of=date.today()))
     for field, value in updates.items():
         setattr(account, field, value)
     db.commit()
