@@ -11,6 +11,7 @@ def _make_account(client):
         "name": "Venture",
         "account_number": "1543",
         "account_type": "credit_card",
+        "default_importer": CAPONE_IMPORTER,
     })
     assert r.status_code == 201, r.text
     return r.json()
@@ -39,7 +40,7 @@ def test_import_bulk_single_file(client):
     csv_bytes = SAMPLE_CSV.read_bytes()
     r = client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
     )
     assert r.status_code == 200
@@ -55,7 +56,7 @@ def test_import_bulk_transactions_saved_to_db(client):
     csv_bytes = SAMPLE_CSV.read_bytes()
     client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
     )
     body = client.get("/api/transactions").json()
@@ -69,7 +70,7 @@ def test_import_bulk_multiple_files(client):
     csv_bytes = SAMPLE_CSV.read_bytes()
     r = client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[
             ("files", ("jan.csv", csv_bytes, "text/csv")),
             ("files", ("feb.csv", csv_bytes, "text/csv")),
@@ -90,18 +91,31 @@ def test_import_bulk_unknown_account_returns_404(client):
     csv_bytes = SAMPLE_CSV.read_bytes()
     r = client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": 9999, "importer": CAPONE_IMPORTER},
+        data={"account_id": 9999},
         files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
     )
     assert r.status_code == 404
 
 
-def test_import_bulk_unknown_importer_returns_400(client):
-    acct = _make_account(client)
+def test_import_bulk_account_with_invalid_importer_returns_400(client):
+    # The importer is now derived from the account. An account whose stored
+    # importer is not in the registry (e.g. a legacy row) cannot be imported.
+    from app.models import Account
+    from tests.conftest import TestingSession
+    db = TestingSession()
+    acct = Account(
+        bank="Capital One", name="Venture", account_number="1543",
+        account_type="credit_card", default_importer="Nonexistent Bank",
+    )
+    db.add(acct)
+    db.commit()
+    acct_id = acct.id
+    db.close()
+
     csv_bytes = SAMPLE_CSV.read_bytes()
     r = client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": "Nonexistent Bank"},
+        data={"account_id": acct_id},
         files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
     )
     assert r.status_code == 400
@@ -116,7 +130,7 @@ def test_import_bulk_partial_errors_reported_per_file(client):
     )
     r = client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", ("bad.csv", bad_csv, "text/csv"))],
     )
     assert r.status_code == 200
@@ -130,7 +144,7 @@ def test_import_bulk_empty_csv_zero_imported(client):
     empty_csv = b"Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit\n"
     r = client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", ("empty.csv", empty_csv, "text/csv"))],
     )
     assert r.status_code == 200
@@ -145,7 +159,7 @@ def test_import_bulk_errors_do_not_block_other_files(client):
     good_csv = SAMPLE_CSV.read_bytes()
     r = client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[
             ("files", ("bad.csv",  bad_csv,  "text/csv")),
             ("files", ("good.csv", good_csv, "text/csv")),
@@ -169,7 +183,7 @@ def test_import_bulk_marks_transactions_pending(client):
     csv_bytes = SAMPLE_CSV.read_bytes()
     client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
     )
     txs = client.get("/api/transactions?limit=100").json()["data"]
@@ -193,7 +207,7 @@ def test_categorizer_status_after_import(client):
     csv_bytes = SAMPLE_CSV.read_bytes()
     client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
     )
     r = client.get("/api/categorizer/status").json()
@@ -210,7 +224,7 @@ def test_categorizer_status_after_categorization(client):
     csv_bytes = SAMPLE_CSV.read_bytes()
     client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
     )
     # Simulate the background worker writing back results for 5 rows (ids 1-5).
@@ -237,7 +251,7 @@ def test_import_creates_file_import_record(client):
     acct = _make_account(client)
     client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", ("sample.csv", SAMPLE_CSV.read_bytes(), "text/csv"))],
     )
     db = TestingSession()
@@ -262,7 +276,7 @@ def test_reimport_short_circuits_without_second_record(client):
     for _ in range(2):
         r = client.post(
             "/api/transactions/import-bulk",
-            data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+            data={"account_id": acct["id"]},
             files=[("files", ("sample.csv", csv_bytes, "text/csv"))],
         )
     assert r.json()[0]["duplicate_file"] is True
@@ -289,7 +303,7 @@ def test_multi_file_import_creates_one_record_per_file(client):
     )
     client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[
             ("files", ("jan.csv", jan_csv, "text/csv")),
             ("files", ("feb.csv", feb_csv, "text/csv")),
@@ -315,7 +329,7 @@ def test_partial_error_rows_seen_includes_bad_rows(client):
     )
     client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", ("mixed.csv", csv, "text/csv"))],
     )
     db = TestingSession()
@@ -337,12 +351,12 @@ def test_get_file_imports_endpoint(client):
     )
     client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", ("first.csv", first_csv, "text/csv"))],
     )
     client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", ("second.csv", second_csv, "text/csv"))],
     )
     r = client.get("/api/file-imports")
@@ -369,7 +383,7 @@ def test_file_imports_pagination(client):
         )
         client.post(
             "/api/transactions/import-bulk",
-            data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+            data={"account_id": acct["id"]},
             files=[("files", (f"batch_{i:02d}.csv", one_row_csv, "text/csv"))],
         )
     page1 = client.get("/api/file-imports?page=1&limit=25").json()
@@ -393,7 +407,7 @@ def test_import_bulk_filename_with_special_chars_preserved(client):
     csv_bytes = SAMPLE_CSV.read_bytes()
     r = client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", (special_name, csv_bytes, "text/csv"))],
     )
     assert r.status_code == 200
@@ -435,6 +449,7 @@ def _make_savings_account(client):
         "name": "360 Savings",
         "account_number": "1543",
         "account_type": "savings",
+        "default_importer": SAVINGS_IMPORTER,
     })
     assert r.status_code == 201, r.text
     return r.json()
@@ -451,7 +466,7 @@ def test_import_savings_ascending_order_sets_newest_balance(client):
     )
     r = client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": SAVINGS_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", ("savings.csv", csv_bytes, "text/csv"))],
     )
     assert r.status_code == 200
@@ -469,7 +484,7 @@ SAVINGS_HEADER = (
 def _upload_savings(client, acct, filename, rows: bytes):
     r = client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": SAVINGS_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", (filename, SAVINGS_HEADER + rows, "text/csv"))],
     )
     assert r.status_code == 200, r.text
@@ -554,7 +569,7 @@ def test_binary_upload_returns_200_with_error(client):
     acct = _make_account(client)
     r = client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", ("bad.xlsx", BINARY_BYTES, "application/octet-stream"))],
     )
     assert r.status_code == 200
@@ -568,7 +583,7 @@ def test_binary_upload_does_not_persist_transactions(client):
     acct = _make_account(client)
     client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[("files", ("bad.xlsx", BINARY_BYTES, "application/octet-stream"))],
     )
     assert client.get("/api/transactions").json()["total"] == 0
@@ -580,7 +595,7 @@ def test_mixed_batch_binary_does_not_abort_good_file(client):
     good_csv = SAMPLE_CSV.read_bytes()
     r = client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct["id"], "importer": CAPONE_IMPORTER},
+        data={"account_id": acct["id"]},
         files=[
             ("files", ("bad.xlsx",   BINARY_BYTES, "application/octet-stream")),
             ("files", ("good.csv",   good_csv,     "text/csv")),

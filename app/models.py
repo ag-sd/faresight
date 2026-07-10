@@ -105,7 +105,7 @@ class Account(Base):
         Enum(SourceFrequency), nullable=True
     )
     current_balance: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    default_importer: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_importer: Mapped[str] = mapped_column(String(100), nullable=False)
 
 
 class FileImport(Base):
@@ -152,12 +152,11 @@ class Category(Base):
 
 class Rule(Base):
     __tablename__ = "transaction_classification_rules"
-    __table_args__ = (UniqueConstraint("description", "category", "importer"),)
+    __table_args__ = (UniqueConstraint("description", "category"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     description: Mapped[str] = mapped_column(String(255), nullable=False)
     category: Mapped[str] = mapped_column(String(100), nullable=False)
-    importer: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
 

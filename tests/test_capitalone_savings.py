@@ -191,6 +191,7 @@ def test_import_bulk_updates_account_balance(client):
         "name": "360 Savings",
         "account_number": "1543",
         "account_type": "savings",
+        "default_importer": "Capital One Checking/Savings",
     })
     assert acc_resp.status_code == 201
     account_id = acc_resp.json()["id"]
@@ -204,7 +205,7 @@ def test_import_bulk_updates_account_balance(client):
 
     resp = client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": account_id, "importer": "Capital One Checking/Savings"},
+        data={"account_id": account_id},
         files=[("files", ("savings.csv", io.BytesIO(csv_bytes), "text/csv"))],
     )
     assert resp.status_code == 200

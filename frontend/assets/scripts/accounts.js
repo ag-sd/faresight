@@ -219,6 +219,11 @@ function openAddAccount(type) {
   document.getElementById('addAccountForm').reset();
   document.getElementById('acctId').value = '';
   document.getElementById('acctType').value = type;
+  const impSel = document.getElementById('acctImporter');
+  impSel.innerHTML = '<option value="" disabled selected>Select a file format…</option>';
+  _importers.forEach(name => {
+    impSel.insertAdjacentHTML('beforeend', `<option value="${esc(name)}">${esc(name)}</option>`);
+  });
   populateSourceSelect(null);
   bootstrap.Modal.getOrCreateInstance(document.getElementById('addAccountModal')).show();
 }
@@ -253,7 +258,7 @@ function openDetailsAccount(account) {
 
   // Importer accordion
   const impSel = document.getElementById('detailImporter');
-  impSel.innerHTML = '<option value="">None</option>';
+  impSel.innerHTML = '<option value="" disabled>Select a file format…</option>';
   _importers.forEach(name => {
     impSel.insertAdjacentHTML('beforeend', `<option value="${esc(name)}">${esc(name)}</option>`);
   });
@@ -367,6 +372,7 @@ async function submitAccountForm() {
     source_account_id: sourceId,
     source_amount: sourceId && sourceAmtRaw ? parseFloat(sourceAmtRaw) : null,
     source_frequency: sourceId ? (fd.get('source_frequency') || null) : null,
+    default_importer: fd.get('default_importer'),
   };
 
   try {

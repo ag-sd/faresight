@@ -7,8 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.importers import IMPORTERS
-from app.models import Category, FileImport, Rule, Transaction
+from app.models import Category, Rule, Transaction
 from app.rule_matching import compile_rule
 from app.schemas import RuleCreate, RuleOut, RuleUpdate
 
@@ -27,19 +26,14 @@ def _validate_regex(pattern: str) -> None:
 
 
 @router.get("", response_model=list[RuleOut])
-def list_rules(importer: Optional[str] = None, db: Session = Depends(get_db)):
-    q = db.query(Rule)
-    if importer:
-        q = q.filter(Rule.importer == importer)
-    return q.order_by(Rule.created_at.desc()).all()
+def list_rules(db: Session = Depends(get_db)):
+    return db.query(Rule).order_by(Rule.created_at.desc()).all()
 
 
 @router.post("", response_model=RuleOut, status_code=201)
 def create_rule(body: RuleCreate, db: Session = Depends(get_db)):
     if not db.query(Category).filter(Category.name == body.category).first():
         raise HTTPException(status_code=422, detail=f"Unknown category: {body.category!r}")
-    if body.importer not in IMPORTERS:
-        raise HTTPException(status_code=422, detail=f"Unknown importer: {body.importer!r}")
     _validate_regex(body.description)
     rule = Rule(**body.model_dump())
     db.add(rule)
@@ -49,7 +43,7 @@ def create_rule(body: RuleCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(
             status_code=409,
-            detail="A rule for this pattern, category, and importer already exists.",
+            detail="A rule for this pattern and category already exists.",
         )
     db.refresh(rule)
     return rule
@@ -63,8 +57,6 @@ def update_rule(rule_id: int, body: RuleUpdate, db: Session = Depends(get_db)):
     data = body.model_dump(exclude_unset=True)
     if "category" in data and not db.query(Category).filter(Category.name == data["category"]).first():
         raise HTTPException(status_code=422, detail=f"Unknown category: {data['category']!r}")
-    if "importer" in data and data["importer"] not in IMPORTERS:
-        raise HTTPException(status_code=422, detail=f"Unknown importer: {data['importer']!r}")
     if "description" in data:
         _validate_regex(data["description"])
     for field, value in data.items():
@@ -75,7 +67,7 @@ def update_rule(rule_id: int, body: RuleUpdate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(
             status_code=409,
-            detail="A rule for this pattern, category, and importer already exists.",
+            detail="A rule for this pattern and category already exists.",
         )
     db.refresh(rule)
     return rule
@@ -96,22 +88,11 @@ def apply_rule(rule_id: int, db: Session = Depends(get_db)):
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
 
-    file_import_ids = [
-        row.id
-        for row in db.query(FileImport.id).filter(FileImport.importer == rule.importer).all()
-    ]
-
-    if not file_import_ids:
-        return {"updated": 0}
-
     # SQLite has no native regex; filter candidates in Python, update by id.
     pattern = compile_rule(rule.description)
     candidates = (
         db.query(Transaction.id, Transaction.description)
-        .filter(
-            Transaction.file_id.in_(file_import_ids),
-            Transaction.user_modified_category == False,
-        )
+        .filter(Transaction.user_modified_category == False)
         .all()
     )
     matched_ids = [tid for tid, desc in candidates if pattern.search(desc)]

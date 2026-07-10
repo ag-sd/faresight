@@ -1,10 +1,10 @@
-// Map of "name:size" -> { file, accountId, importerName } for deduplication.
-// accountId / importerName are the per-file account + importer choices.
+// Map of "name:size" -> { file, accountId } for deduplication.
+// accountId is the per-file account choice; the importer is derived server-side
+// from the account's default_importer.
 const fileSet = new Map();
 
 // Populated in init() and reused when rendering per-file selects.
 let accountsList = [];
-let importersList = [];
 let _topCardPageLimit = 5;  // overwritten from /api/config at boot
 
 // ── File list ─────────────────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ function addFiles(fileList) {
   for (const f of fileList) {
     const key = fileKey(f);
     if (!fileSet.has(key)) {
-      fileSet.set(key, { file: f, accountId: '', importerName: '' });
+      fileSet.set(key, { file: f, accountId: '' });
     }
   }
   renderFileList();
@@ -62,21 +62,9 @@ function renderFileList() {
     name.innerHTML = '<i class="fa-regular fa-file me-2 text-muted"></i>';
     name.append(entry.file.name);  // text node — browser escapes special characters automatically
 
-    const impOpts = importersList.map(n => ({ value: n, label: n }));
-    const impSel = buildSelect(impOpts, entry.importerName, 'Importer…', (e) => {
-      entry.importerName = e.target.value;
-      updateUploadBtn();
-    });
-    impSel.style.maxWidth = '14rem';
-
     const acctOpts = accountsList.map(a => ({ value: a.id, label: `${a.bank} — ${a.name}` }));
     const acctSel = buildSelect(acctOpts, entry.accountId, 'Account…', (e) => {
       entry.accountId = e.target.value;
-      const acct = accountsList.find(a => String(a.id) === e.target.value);
-      if (acct?.default_importer) {
-        entry.importerName = acct.default_importer;
-        impSel.value = acct.default_importer;
-      }
       updateUploadBtn();
     });
     acctSel.style.maxWidth = '14rem';
@@ -86,7 +74,7 @@ function renderFileList() {
     btn.innerHTML = '<i class="fa-solid fa-xmark"></i>';  // static markup only
     btn.addEventListener('click', () => removeFile(key));   // key closed over, never serialized into HTML
 
-    row.append(name, acctSel, impSel, btn);
+    row.append(name, acctSel, btn);
     li.append(row);
     ul.appendChild(li);
   }
@@ -122,8 +110,8 @@ input.addEventListener('change', () => {
 
 function updateUploadBtn() {
   const btn = document.getElementById('uploadBtn');
-  // Enabled only once every file has both an account and an importer assigned.
-  const allAssigned = [...fileSet.values()].every(e => e.accountId && e.importerName);
+  // Enabled only once every file has an account assigned.
+  const allAssigned = [...fileSet.values()].every(e => e.accountId);
   btn.disabled = !(fileSet.size > 0 && allAssigned);
 }
 
@@ -140,8 +128,8 @@ async function doUpload() {
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Uploading…';
   wrap.classList.remove('d-none');
 
-  // One request per file, so each carries its own account + importer. Failures
-  // are recorded per-file and do not abort the batch.
+  // One request per file, so each carries its own account (the importer is
+  // derived server-side). Failures are recorded per-file and do not abort the batch.
   const results = [];
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
@@ -151,7 +139,6 @@ async function doUpload() {
     const fd = new FormData();
     fd.append('files', entry.file);
     fd.append('account_id', entry.accountId);
-    fd.append('importer', entry.importerName);
 
     try {
       const res = await fetch('/api/transactions/import-bulk', { method: 'POST', body: fd });
@@ -365,7 +352,6 @@ async function loadRules() {
     <tr>
       <td class="text-truncate" style="max-width:300px" title="${esc(r.description)}">${esc(r.description)}</td>
       <td>${esc(r.category)}</td>
-      <td>${esc(r.importer)}</td>
       <td class="text-end">
         <div class="btn-group btn-group-sm">
           <button class="btn btn-outline-primary" onclick="applyRule(${r.id})">
@@ -388,7 +374,6 @@ async function loadRules() {
           <tr>
             <th>Pattern</th>
             <th>Category</th>
-            <th>Importer</th>
             <th></th>
           </tr>
         </thead>
@@ -571,14 +556,10 @@ async function deleteCategory(name) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init() {
-  const [accounts, importers] = await Promise.all([
-    api('/api/accounts'),
-    api('/api/importers'),
-  ]);
+  const accounts = await api('/api/accounts');
 
   // Cache for the per-file selects rendered in renderFileList().
   accountsList = accounts;
-  importersList = importers;
 
   const accountMap = {};
   accounts.forEach(a => { accountMap[a.id] = `${a.bank} — ${a.name}`; });

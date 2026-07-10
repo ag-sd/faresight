@@ -8,6 +8,7 @@ def _make_account(client, **kwargs):
         "account_number": "1234",
         "account_type": "credit_card",
         "notes": None,
+        "default_importer": "Capital One Credit Card",
     }
     defaults.update(kwargs)
     r = client.post("/api/accounts", json=defaults)
@@ -271,6 +272,7 @@ def test_create_with_inactive_source_returns_422(client):
     r = client.post("/api/accounts", json={
         "bank": "New", "name": "New", "account_number": "9999",
         "account_type": "checking", "source_account_id": source["id"],
+        "default_importer": "Capital One Credit Card",
     })
     assert r.status_code == 422
     assert "not active" in r.json()["detail"].lower()
@@ -281,7 +283,7 @@ def test_create_with_inactive_source_returns_422(client):
 def test_account_response_has_name_not_nickname(client):
     r = client.post("/api/accounts", json={
         "bank": "Chase", "name": "Sapphire", "account_number": "1234",
-        "account_type": "credit_card",
+        "account_type": "credit_card", "default_importer": "Capital One Credit Card",
     })
     assert r.status_code == 201
     data = r.json()
@@ -305,9 +307,19 @@ def test_create_with_default_importer(client):
     assert a["default_importer"] == "Capital One Credit Card"
 
 
-def test_create_without_default_importer(client):
-    a = _make_account(client)
-    assert a["default_importer"] is None
+def test_create_missing_default_importer_returns_422(client):
+    r = client.post("/api/accounts", json={
+        "bank": "Chase", "name": "x", "account_number": "1234", "account_type": "credit_card"
+    })
+    assert r.status_code == 422
+
+
+def test_create_unknown_default_importer_returns_422(client):
+    r = client.post("/api/accounts", json={
+        "bank": "Chase", "name": "x", "account_number": "1234",
+        "account_type": "credit_card", "default_importer": "Ghost Bank",
+    })
+    assert r.status_code == 422
 
 
 def test_patch_default_importer(client):
@@ -315,9 +327,12 @@ def test_patch_default_importer(client):
     r = client.patch(f"/api/accounts/{a['id']}", json={"default_importer": "Chase Credit Card"})
     assert r.status_code == 200
     assert r.json()["default_importer"] == "Chase Credit Card"
-    r2 = client.patch(f"/api/accounts/{a['id']}", json={"default_importer": None})
-    assert r2.status_code == 200
-    assert r2.json()["default_importer"] is None
+
+
+def test_patch_unknown_default_importer_returns_422(client):
+    a = _make_account(client)
+    r = client.patch(f"/api/accounts/{a['id']}", json={"default_importer": "Ghost Bank"})
+    assert r.status_code == 422
 
 
 # ── Bank logos ────────────────────────────────────────────────────────────────

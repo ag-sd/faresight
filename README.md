@@ -231,6 +231,7 @@ erDiagram
         float    source_amount
         string   source_frequency
         float    current_balance
+        string   default_importer
     }
 
     transactions {

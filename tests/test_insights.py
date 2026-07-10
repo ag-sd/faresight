@@ -123,9 +123,11 @@ def test_recurring_excludes_positive_amounts(client):
 
 def test_recurring_groups_per_account(client):
     a1 = client.post("/api/accounts", json={"bank": "B", "name": "One",
-        "account_number": "1", "account_type": "credit_card"}).json()["id"]
+        "account_number": "1", "account_type": "credit_card",
+        "default_importer": "Capital One Credit Card"}).json()["id"]
     a2 = client.post("/api/accounts", json={"bank": "B", "name": "Two",
-        "account_number": "2", "account_type": "credit_card"}).json()["id"]
+        "account_number": "2", "account_type": "credit_card",
+        "default_importer": "Capital One Credit Card"}).json()["id"]
     _seed_netflix(client, account_id=a1)
     _seed_netflix(client, account_id=a2)
     items = _recurring(client)["items"]

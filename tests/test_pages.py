@@ -35,6 +35,13 @@ def test_income_page_has_activity_card(client):
     assert "Account Activity" in html
 
 
+def test_account_form_has_required_importer_select(client):
+    html = _income_html(client)
+    # The Add Account form now requires a file format (importer) up front.
+    assert 'id="acctImporter"' in html
+    assert 'name="default_importer"' in html
+
+
 def test_income_page_bank_creation_only(client):
     html = _income_html(client)
     assert "credit_card" not in html
@@ -170,7 +177,7 @@ def test_income_page_has_create_rule_modal(client):
     assert 'id="createRuleModal"' in html
     assert 'id="ruleDescription"' in html
     assert 'id="ruleCategory"' in html
-    assert 'id="ruleImporter"' in html
+    assert 'id="ruleImporter"' not in html
     assert 'fa-bookmark' in html
 
 
@@ -226,7 +233,7 @@ def test_upload_page_has_progress_and_controls(client):
     assert 'id="uploadProgressText"' in html
     assert 'id="uploadProgressBar"' in html
     assert 'id="accountSelect"' not in html  # removed; account selected per-file
-    assert 'id="importerSelect"' not in html  # removed; importer auto-fills from account default
+    assert 'id="importerSelect"' not in html  # removed; importer derived from the account server-side
     assert 'id="uploadBtn"' in html
     assert 'id="resultModal"' in html
 

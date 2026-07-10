@@ -198,15 +198,10 @@ function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-async function _populateRuleSelects() {
-  const catSel = document.getElementById('ruleCategory');
-  catSel.innerHTML = categoryNames()
+function _populateRuleSelects() {
+  document.getElementById('ruleCategory').innerHTML = categoryNames()
     .map(c => `<option value="${esc(c)}">${esc(c)}</option>`)
     .join('');
-
-  const importers = await api('/api/importers');
-  document.getElementById('ruleImporter').innerHTML =
-    importers.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join('');
 }
 
 function _showRuleModal(title, saveLabel) {
@@ -216,27 +211,26 @@ function _showRuleModal(title, saveLabel) {
   new bootstrap.Modal(document.getElementById('createRuleModal')).show();
 }
 
-async function openCreateRuleModal() {
+function openCreateRuleModal() {
   _editingRuleId = null;
   // Escape the transaction description so the prefilled pattern matches it
   // literally (e.g. AMZN*MKTP); the user can edit it into a real regex.
   document.getElementById('ruleDescription').value =
     escapeRegExp(document.getElementById('editTxDescription').textContent);
 
-  await _populateRuleSelects();
+  _populateRuleSelects();
   document.getElementById('ruleCategory').value =
     document.getElementById('editCategorySelect').value;
 
   _showRuleModal('Create Classification Rule', 'Save Rule');
 }
 
-async function openEditRuleModal(rule) {
+function openEditRuleModal(rule) {
   _editingRuleId = rule.id;
   document.getElementById('ruleDescription').value = rule.description;
 
-  await _populateRuleSelects();
+  _populateRuleSelects();
   document.getElementById('ruleCategory').value = rule.category;
-  document.getElementById('ruleImporter').value = rule.importer;
 
   _showRuleModal('Edit Classification Rule', 'Save Changes');
 }
@@ -259,7 +253,6 @@ async function saveRule() {
   const body = JSON.stringify({
     description,
     category: document.getElementById('ruleCategory').value,
-    importer: document.getElementById('ruleImporter').value,
   });
   try {
     if (_editingRuleId !== null) {

@@ -203,8 +203,7 @@ def test_migrate_adds_reference_number():
 
 
 def _rules_unique_index_present(conn) -> bool:
-    """True if transaction_classification_rules carries the UNIQUE
-    (description, category, importer) constraint."""
+    """True if transaction_classification_rules carries the UNIQUE (description, category) constraint."""
     for idx in conn.execute(text(
         "PRAGMA index_list('transaction_classification_rules')"
     )).fetchall():
@@ -213,23 +212,22 @@ def _rules_unique_index_present(conn) -> bool:
         cols = {r[2] for r in conn.execute(
             text(f"PRAGMA index_info('{idx[1]}')")
         ).fetchall()}
-        if cols == {"description", "category", "importer"}:
+        if cols == {"description", "category"}:
             return True
     return False
 
 
 def test_migrate_preserves_rules():
     """Rules on a correctly-shaped table survive migrate_db — the migration must
-    be a no-op when the UNIQUE constraint is already present (regression: the
-    table used to be dropped and recreated on every boot)."""
+    be a no-op when the UNIQUE constraint is already present."""
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     try:
         with engine.begin() as conn:
             conn.execute(text(
                 "INSERT INTO transaction_classification_rules "
-                "(description, category, importer) "
-                "VALUES ('COFFEE SHOP', 'Food', 'Chase Credit Card')"
+                "(description, category) "
+                "VALUES ('COFFEE SHOP', 'Food')"
             ))
             rule_id = conn.execute(text(
                 "SELECT id FROM transaction_classification_rules"
@@ -240,19 +238,25 @@ def test_migrate_preserves_rules():
 
         with engine.connect() as conn:
             rows = conn.execute(text(
-                "SELECT id, description, category, importer "
+                "SELECT id, description, category "
                 "FROM transaction_classification_rules"
             )).fetchall()
-            assert rows == [(rule_id, "COFFEE SHOP", "Food", "Chase Credit Card")]
+            assert rows == [(rule_id, "COFFEE SHOP", "Food")]
             assert _rules_unique_index_present(conn)
+            # importer column must be gone
+            cols = {r[1] for r in conn.execute(text(
+                "PRAGMA table_info(transaction_classification_rules)"
+            ))}
+            assert "importer" not in cols
     finally:
         Base.metadata.drop_all(bind=engine)
 
 
 def test_migrate_upgrades_legacy_rules_table():
-    """A legacy table without the UNIQUE constraint is rebuilt in place: rows
-    are preserved, duplicates collapse to the first occurrence, and the
-    constraint lands. Second run is a no-op."""
+    """A legacy table with the old (description, category, importer) shape is
+    rebuilt: importer column dropped, rows preserved, (description, category)
+    duplicates collapse to the first occurrence, and the new constraint lands.
+    Second run is a no-op."""
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     try:
@@ -264,16 +268,19 @@ def test_migrate_upgrades_legacy_rules_table():
                 " description VARCHAR(255) NOT NULL,"
                 " category VARCHAR(100) NOT NULL,"
                 " importer VARCHAR(100) NOT NULL,"
-                " created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+                " created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                " UNIQUE (description, category, importer))"
             ))
-            for desc, cat in (("COFFEE SHOP", "Food"),
-                              ("GYM", "Health"),
-                              ("COFFEE SHOP", "Food")):  # exact duplicate
+            for desc, cat, imp in (
+                ("COFFEE SHOP", "Food", "Chase Credit Card"),
+                ("GYM", "Health", "Chase Credit Card"),
+                # Same (description, category) — different importer: collapses after drop
+                ("COFFEE SHOP", "Food", "Capital One Credit Card"),
+            ):
                 conn.execute(text(
                     "INSERT INTO transaction_classification_rules "
-                    "(description, category, importer) "
-                    "VALUES (:d, :c, 'Chase Credit Card')"
-                ), {"d": desc, "c": cat})
+                    "(description, category, importer) VALUES (:d, :c, :i)"
+                ), {"d": desc, "c": cat, "i": imp})
 
         migrate_db()
         migrate_db()  # idempotent — second run is a no-op
@@ -283,9 +290,14 @@ def test_migrate_upgrades_legacy_rules_table():
                 "SELECT id, description, category "
                 "FROM transaction_classification_rules ORDER BY id"
             )).fetchall()
-            # Duplicate collapsed to the first occurrence (lowest id).
+            # Duplicate (description, category) collapsed to the first occurrence.
             assert rows == [(1, "COFFEE SHOP", "Food"), (2, "GYM", "Health")]
             assert _rules_unique_index_present(conn)
+            # importer column gone
+            cols = {r[1] for r in conn.execute(text(
+                "PRAGMA table_info(transaction_classification_rules)"
+            ))}
+            assert "importer" not in cols
             # Rebuild scaffolding cleaned up.
             leftover = conn.execute(text(
                 "SELECT 1 FROM sqlite_master "
@@ -297,7 +309,7 @@ def test_migrate_upgrades_legacy_rules_table():
 
 
 def test_migrate_creates_rules_table_when_absent():
-    """A DB predating the rules feature gets the table with the constraint."""
+    """A DB predating the rules feature gets the table with the new schema."""
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     try:
@@ -310,7 +322,8 @@ def test_migrate_creates_rules_table_when_absent():
             cols = {r[1] for r in conn.execute(text(
                 "PRAGMA table_info(transaction_classification_rules)"
             ))}
-            assert {"id", "description", "category", "importer", "created_at"} <= cols
+            assert {"id", "description", "category", "created_at"} <= cols
+            assert "importer" not in cols
             assert _rules_unique_index_present(conn)
     finally:
         Base.metadata.drop_all(bind=engine)

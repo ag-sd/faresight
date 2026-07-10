@@ -189,12 +189,6 @@ Categorizer should categorize from most recent to oldest
 
 Upgrade to FA 7
 
-Allow rules to use Regex (starts with / ends with)
-
-For transaction categorization rules, lets update the UI modal to accept a regex which can then be applied to new rules as well as existing
-rules.
-
-
 
 ----
 
@@ -219,6 +213,9 @@ Group several expenses together (Ex: Florida Travel)
 How do we incorporate Trading activity like the below files into this model.
 
 associate the importer with an account so that i dont have to pick it up twice
+
+We should add the ability to manually edit the current balance on an account. When this is done the previous value is
+stored in balance_history and the new one is saved on the account
 
 
 bofa_checking_stmt_to_7-6-2026.csv

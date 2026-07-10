@@ -5,7 +5,7 @@ from tests.conftest import make_tx
 
 
 def _make_account(client, **kwargs):
-    defaults = {"bank": "Test Bank", "name": "Test Card", "account_number": "1234", "account_type": "credit_card"}
+    defaults = {"bank": "Test Bank", "name": "Test Card", "account_number": "1234", "account_type": "credit_card", "default_importer": "Capital One Credit Card"}
     defaults.update(kwargs)
     r = client.post("/api/accounts", json=defaults)
     assert r.status_code == 201, r.text

@@ -69,7 +69,7 @@ class AccountCreate(BaseModel):
     source_amount: Optional[float] = None
     source_frequency: Optional[SourceFrequency] = None
     current_balance: Optional[float] = None
-    default_importer: Optional[str] = None
+    default_importer: str
 
 
 class AccountUpdate(BaseModel):
@@ -140,13 +140,11 @@ class RuleCreate(BaseModel):
     # description; plain text behaves as a case-insensitive "contains".
     description: str
     category: str
-    importer: str
 
 
 class RuleUpdate(BaseModel):
     description: Optional[str] = None
     category: Optional[str] = None
-    importer: Optional[str] = None
 
 
 class RuleOut(RuleCreate):

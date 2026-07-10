@@ -129,7 +129,7 @@ def test_by_category_for_period_missing_year_returns_422(client):
 def _make_account(client, account_type="credit_card", account_number="1111"):
     r = client.post("/api/accounts", json={
         "bank": "Test", "name": "Acct", "account_number": account_number,
-        "account_type": account_type,
+        "account_type": account_type, "default_importer": "Capital One Credit Card",
     })
     assert r.status_code == 201
     return r.json()["id"]

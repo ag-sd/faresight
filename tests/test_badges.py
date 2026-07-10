@@ -13,6 +13,7 @@ def _make_account(client, account_type="checking", name="Checking", balance=None
         "account_number": "0001",
         "account_type": account_type,
         "current_balance": balance,
+        "default_importer": "Capital One Credit Card",
     })
     assert r.status_code == 201, r.text
     return r.json()

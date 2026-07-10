@@ -381,14 +381,14 @@ def list_importers() -> list[str]:
 async def import_bulk(
     files: List[UploadFile] = File(...),
     account_id: int = Form(...),
-    importer: str = Form(...),
     db: Session = Depends(get_db),
 ):
     account = db.get(Account, account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
-    if importer not in IMPORTERS:
-        raise HTTPException(status_code=400, detail=f"Unknown importer: {importer!r}")
+    importer = account.default_importer
+    if not importer or importer not in IMPORTERS:
+        raise HTTPException(status_code=400, detail=f"Account has no valid importer configured: {importer!r}")
 
     import_fn = IMPORTERS[importer]
     results = []
@@ -439,11 +439,10 @@ async def import_bulk(
         db.add(log)
         db.flush()  # populate log.id before inserting transactions
 
-        # Pre-classify transactions that match a rule for this importer.
+        # Pre-classify transactions that match any rule.
         # Ordered oldest-first so the first-created matching rule wins.
         rules = (
             db.query(Rule)
-            .filter(Rule.importer == importer)
             .order_by(Rule.created_at, Rule.id)
             .all()
         )

@@ -22,21 +22,22 @@ CC_HEADER = b"Transaction Date,Posted Date,Card No.,Description,Category,Debit,C
 SAMPLE_NET = -7.86
 
 
-def _make_account(client, account_type="credit_card", name="Venture"):
+def _make_account(client, account_type="credit_card", name="Venture", default_importer=CAPONE_IMPORTER):
     r = client.post("/api/accounts", json={
         "bank": "Capital One",
         "name": name,
         "account_number": "1543",
         "account_type": account_type,
+        "default_importer": default_importer,
     })
     assert r.status_code == 201, r.text
     return r.json()
 
 
-def _import(client, acct_id, files, importer=CAPONE_IMPORTER):
+def _import(client, acct_id, files):
     r = client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": acct_id, "importer": importer},
+        data={"account_id": acct_id},
         files=[("files", (name, content, "text/csv")) for name, content in files],
     )
     assert r.status_code == 200, r.text
@@ -195,15 +196,15 @@ def test_empty_file_leaves_balance_untouched(client):
 
 def test_snapshot_still_wins_over_delta(client):
     """Snapshot-bearing files (checking/savings) keep the authoritative path."""
-    acct = _make_account(client, account_type="savings", name="360 Savings")
+    acct = _make_account(client, account_type="savings", name="360 Savings", default_importer=SAVINGS_IMPORTER)
     csv_bytes = (
         b"Account Number,Transaction Description,Transaction Date,Transaction Type,Transaction Amount,Balance\n"
         b"1543,Deposit,06/23/26,Credit,1000,11500.00\n"
     )
-    _import(client, acct["id"], [("sav.csv", csv_bytes)], importer=SAVINGS_IMPORTER)
+    _import(client, acct["id"], [("sav.csv", csv_bytes)])
     assert _balance(client, acct["id"]) == 11500.00
 
-    results = _import(client, acct["id"], [("sav.csv", csv_bytes)], importer=SAVINGS_IMPORTER)
+    results = _import(client, acct["id"], [("sav.csv", csv_bytes)])
     assert results[0]["duplicate_file"] is True
     assert _balance(client, acct["id"]) == 11500.00
 
@@ -222,12 +223,12 @@ def test_delta_import_logs_one_balance_point(client):
 
 
 def test_snapshot_import_logs_authoritative_point(client):
-    acct = _make_account(client, account_type="savings", name="360 Savings")
+    acct = _make_account(client, account_type="savings", name="360 Savings", default_importer=SAVINGS_IMPORTER)
     csv_bytes = (
         b"Account Number,Transaction Description,Transaction Date,Transaction Type,Transaction Amount,Balance\n"
         b"1543,Deposit,06/23/26,Credit,1000,11500.00\n"
     )
-    _import(client, acct["id"], [("sav.csv", csv_bytes)], importer=SAVINGS_IMPORTER)
+    _import(client, acct["id"], [("sav.csv", csv_bytes)])
     rows = _history(acct["id"])
     assert len(rows) == 1
     assert rows[0].balance == 11500.00
@@ -273,6 +274,7 @@ def _bofa_account(client):
     r = client.post("/api/accounts", json={
         "bank": "Bank of America", "name": "Customized Cash",
         "account_number": "9875", "account_type": "credit_card",
+        "default_importer": BOFA_IMPORTER,
     })
     assert r.status_code == 201, r.text
     return r.json()
@@ -283,12 +285,12 @@ def test_reference_number_dedupes_across_description_rewrite(client):
     Reference Number keeps the row's identity, so nothing re-imports."""
     acct = _bofa_account(client)
     pending = BOFA_HEADER + b'05/18/2026,REF12345,"LEMONADE INS PENDING","",-44.83\n'
-    _import(client, acct["id"], [("may.csv", pending)], importer=BOFA_IMPORTER)
+    _import(client, acct["id"], [("may.csv", pending)])
     assert client.get("/api/transactions").json()["total"] == 1
 
     # Same reference number, reworded payee (and a byte change so Layer 1 misses).
     posted = BOFA_HEADER + b'05/18/2026,REF12345,"Lemonade Insurance New York NY","",-44.83\n'
-    results = _import(client, acct["id"], [("may_posted.csv", posted)], importer=BOFA_IMPORTER)
+    results = _import(client, acct["id"], [("may_posted.csv", posted)])
     assert results[0]["imported"] == 0
     assert results[0]["skipped"] == 1
     assert client.get("/api/transactions").json()["total"] == 1
@@ -303,7 +305,7 @@ def test_distinct_reference_numbers_both_import(client):
         + b'05/01/2026,REF-A,"MTA SUBWAY","",-2.90\n'
         + b'05/01/2026,REF-B,"MTA SUBWAY","",-2.90\n'
     )
-    results = _import(client, acct["id"], [("may.csv", rows)], importer=BOFA_IMPORTER)
+    results = _import(client, acct["id"], [("may.csv", rows)])
     assert results[0]["imported"] == 2
     assert client.get("/api/transactions").json()["total"] == 2
 
@@ -312,8 +314,8 @@ def test_bofa_exact_reimport_short_circuits(client):
     """Layer 1 (raw-bytes hash) still short-circuits an identical re-upload."""
     acct = _bofa_account(client)
     csv_bytes = BOFA_HEADER + b'05/18/2026,REF12345,"Lemonade","",-44.83\n'
-    _import(client, acct["id"], [("may.csv", csv_bytes)], importer=BOFA_IMPORTER)
-    results = _import(client, acct["id"], [("may.csv", csv_bytes)], importer=BOFA_IMPORTER)
+    _import(client, acct["id"], [("may.csv", csv_bytes)])
+    results = _import(client, acct["id"], [("may.csv", csv_bytes)])
     assert results[0]["duplicate_file"] is True
     assert client.get("/api/transactions").json()["total"] == 1
 
@@ -323,10 +325,10 @@ def test_blank_reference_falls_back_to_content_hash(client):
     the CapitalOne importer."""
     acct = _bofa_account(client)
     first = BOFA_HEADER + b'05/01/2026,,"MYSTERY CHARGE","",-9.99\n'
-    _import(client, acct["id"], [("a.csv", first)], importer=BOFA_IMPORTER)
+    _import(client, acct["id"], [("a.csv", first)])
     # Different bytes (extra row) so Layer 1 misses; the mystery row must still dedupe.
     extended = first + b'05/02/2026,REF-NEW,"COFFEE","",-4.00\n'
-    results = _import(client, acct["id"], [("b.csv", extended)], importer=BOFA_IMPORTER)
+    results = _import(client, acct["id"], [("b.csv", extended)])
     assert results[0]["imported"] == 1
     assert results[0]["skipped"] == 1
     assert client.get("/api/transactions").json()["total"] == 2
@@ -339,7 +341,7 @@ def test_bofa_balance_derives_from_net_delta(client):
         + b'05/01/2026,REF-A,"Groceries","",-62.50\n'
         + b'05/02/2026,REF-B,"Payment","",44.83\n'
     )
-    _import(client, acct["id"], [("may.csv", rows)], importer=BOFA_IMPORTER)
+    _import(client, acct["id"], [("may.csv", rows)])
     assert _balance(client, acct["id"]) == round(-62.50 + 44.83, 2)
 
 

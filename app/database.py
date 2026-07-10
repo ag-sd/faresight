@@ -176,19 +176,17 @@ def migrate_db() -> None:
             ))
 
         # ── transaction_classification_rules ──────────────────────────────────
-        # Enforce the UNIQUE constraint on (description, category, importer).
-        # SQLite cannot ADD CONSTRAINT to an existing table, so a legacy table
-        # (pre-constraint) is rebuilt via rename → create → copy → drop. Tables
-        # that already carry the constraint are left untouched — user rules
-        # must survive restarts.
+        # Schema: UNIQUE on (description, category) only — importer dropped.
+        # SQLite cannot DROP COLUMN when a UNIQUE index covers it, so any table
+        # that still has the importer column (or lacks the constraint entirely)
+        # is rebuilt via rename → create → copy → drop.
         rules_ddl = """
             CREATE TABLE transaction_classification_rules (
                 id          INTEGER PRIMARY KEY,
                 description VARCHAR(255) NOT NULL,
                 category    VARCHAR(100) NOT NULL,
-                importer    VARCHAR(100) NOT NULL,
                 created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE (description, category, importer)
+                UNIQUE (description, category)
             )
         """
         rules_exists = conn.execute(text(
@@ -198,36 +196,35 @@ def migrate_db() -> None:
         if not rules_exists:
             conn.execute(text(rules_ddl))
         else:
-            has_unique = False
-            for idx in conn.execute(text(
-                "PRAGMA index_list('transaction_classification_rules')"
-            )).fetchall():
-                # index_list rows: (seq, name, unique, origin, partial)
-                if not idx[2]:
-                    continue
-                cols = {r[2] for r in conn.execute(
-                    text(f"PRAGMA index_info('{idx[1]}')")
-                ).fetchall()}
-                if cols == {"description", "category", "importer"}:
-                    has_unique = True
-                    break
-            if not has_unique:
-                old_cols = {r[1] for r in conn.execute(text(
-                    "PRAGMA table_info(transaction_classification_rules)"
-                )).fetchall()}
-                shared = [c for c in ("id", "description", "category", "importer", "created_at")
-                          if c in old_cols]
-                col_list = ", ".join(shared)
+            existing_rule_cols = {r[1] for r in conn.execute(text(
+                "PRAGMA table_info(transaction_classification_rules)"
+            )).fetchall()}
+            # Rebuild if importer column still present or constraint is missing.
+            needs_rebuild = "importer" in existing_rule_cols
+            if not needs_rebuild:
+                needs_rebuild = not any(
+                    idx[2] and
+                    {r[2] for r in conn.execute(
+                        text(f"PRAGMA index_info('{idx[1]}')")
+                    ).fetchall()} == {"description", "category"}
+                    for idx in conn.execute(text(
+                        "PRAGMA index_list('transaction_classification_rules')"
+                    )).fetchall()
+                )
+            if needs_rebuild:
                 conn.execute(text(
                     "ALTER TABLE transaction_classification_rules "
                     "RENAME TO transaction_classification_rules_old"
                 ))
                 conn.execute(text(rules_ddl))
-                # OR IGNORE: rows that now collide on the UNIQUE key collapse to
-                # the first occurrence (lowest id).
+                # OR IGNORE deduplicates rows that share (description, category)
+                # after the importer column is dropped; oldest row (lowest id) wins.
                 conn.execute(text(
-                    f"INSERT OR IGNORE INTO transaction_classification_rules ({col_list}) "
-                    f"SELECT {col_list} FROM transaction_classification_rules_old"
+                    "INSERT OR IGNORE INTO transaction_classification_rules "
+                    "(id, description, category, created_at) "
+                    "SELECT id, description, category, created_at "
+                    "FROM transaction_classification_rules_old "
+                    "ORDER BY created_at ASC"
                 ))
                 conn.execute(text("DROP TABLE transaction_classification_rules_old"))
 

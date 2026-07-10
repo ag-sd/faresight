@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.config import BANK_LOGOS
 from app.database import get_db
+from app.importers import IMPORTERS
 from app.models import Account
 from app.schemas import AccountCreate, AccountOut, AccountUpdate
 
@@ -21,6 +22,8 @@ def list_accounts(db: Session = Depends(get_db)):
 
 @router.post("", response_model=AccountOut, status_code=201)
 def create_account(body: AccountCreate, db: Session = Depends(get_db)):
+    if body.default_importer not in IMPORTERS:
+        raise HTTPException(status_code=422, detail=f"Unknown importer: {body.default_importer!r}")
     if body.source_account_id is not None:
         src = db.get(Account, body.source_account_id)
         if not src:
@@ -40,6 +43,8 @@ def update_account(account_id: int, body: AccountUpdate, db: Session = Depends(g
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     updates = body.model_dump(exclude_unset=True)
+    if "default_importer" in updates and updates["default_importer"] not in IMPORTERS:
+        raise HTTPException(status_code=422, detail=f"Unknown importer: {updates['default_importer']!r}")
     if updates.get("is_active") is False:
         linked = db.query(Account).filter(Account.source_account_id == account_id).first()
         if linked:

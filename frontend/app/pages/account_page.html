@@ -96,6 +96,12 @@
             </select>
           </div>
           <div class="mb-3">
+            <label class="form-label fw-medium" for="acctImporter">File Format</label>
+            <select id="acctImporter" name="default_importer" class="form-select" required>
+              <option value="" disabled selected>Select a file format…</option>
+            </select>
+          </div>
+          <div class="mb-3">
             <label class="form-label fw-medium" for="acctNotes">Notes</label>
             <textarea id="acctNotes" name="notes" class="form-control" rows="2" placeholder="Optional notes"></textarea>
           </div>
@@ -218,8 +224,7 @@
               <div id="collapseDetailImporter" class="accordion-collapse collapse">
                 <div class="accordion-body">
                   <label class="form-label small" for="detailImporter">Default file format</label>
-                  <select id="detailImporter" name="default_importer" class="form-select" disabled>
-                    <option value="">None</option>
+                  <select id="detailImporter" name="default_importer" class="form-select" required disabled>
                   </select>
                 </div>
               </div>

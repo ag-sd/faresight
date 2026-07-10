@@ -4,7 +4,6 @@ import pytest
 VALID_RULE = {
     "description": "TRADER JOE'S #542",
     "category": "Groceries",
-    "importer": "Capital One Credit Card",
 }
 
 
@@ -17,7 +16,6 @@ def test_create_rule(client):
     assert body["id"] is not None
     assert body["description"] == VALID_RULE["description"]
     assert body["category"] == VALID_RULE["category"]
-    assert body["importer"] == VALID_RULE["importer"]
     assert "created_at" in body
 
 
@@ -30,20 +28,6 @@ def test_list_rules_empty(client):
 def test_list_rules(client):
     client.post("/api/rules", json=VALID_RULE)
     r = client.get("/api/rules")
-    assert r.status_code == 200
-    assert len(r.json()) == 1
-
-
-def test_list_rules_filter_by_importer(client):
-    client.post("/api/rules", json=VALID_RULE)
-    client.post("/api/rules", json={**VALID_RULE, "importer": "Capital One Checking/Savings"})
-
-    r = client.get("/api/rules?importer=Capital One Credit Card")
-    assert r.status_code == 200
-    assert len(r.json()) == 1
-    assert r.json()[0]["importer"] == "Capital One Credit Card"
-
-    r = client.get("/api/rules?importer=Capital One Checking/Savings")
     assert r.status_code == 200
     assert len(r.json()) == 1
 
@@ -69,11 +53,6 @@ def test_create_rule_unknown_category(client):
     assert r.status_code == 422
 
 
-def test_create_rule_unknown_importer(client):
-    r = client.post("/api/rules", json={**VALID_RULE, "importer": "Ghost Bank"})
-    assert r.status_code == 422
-
-
 def test_create_rule_duplicate(client):
     client.post("/api/rules", json=VALID_RULE)
     r = client.post("/api/rules", json=VALID_RULE)
@@ -88,23 +67,24 @@ def test_create_rule_all_allowed_categories(client):
         assert r.status_code == 201, f"Failed for category {category!r}: {r.text}"
 
 
-# ── Stage 3: importer saved in file_imports + rule pre-classification ─────────
+# ── Stage 3: rule pre-classification ─────────────────────────────────────────
 
-def _make_account(client):
+def _make_account(client, default_importer="Capital One Credit Card"):
     r = client.post("/api/accounts", json={
         "bank": "Capital One",
         "name": "My Card",
         "account_number": "1234",
         "account_type": "credit_card",
+        "default_importer": default_importer,
     })
     assert r.status_code == 201
     return r.json()["id"]
 
 
-def _import_csv(client, account_id, importer, csv_content):
+def _import_csv(client, account_id, csv_content):
     return client.post(
         "/api/transactions/import-bulk",
-        data={"account_id": account_id, "importer": importer},
+        data={"account_id": account_id},
         files={"files": ("test.csv", csv_content.encode(), "text/csv")},
     )
 
@@ -117,7 +97,7 @@ SAMPLE_CSV = """Transaction Date,Posted Date,Card No.,Description,Category,Debit
 
 def test_file_import_saves_importer(client):
     account_id = _make_account(client)
-    r = _import_csv(client, account_id, "Capital One Credit Card", SAMPLE_CSV)
+    r = _import_csv(client, account_id, SAMPLE_CSV)
     assert r.status_code == 200
 
     fi = client.get("/api/file-imports").json()["data"]
@@ -130,10 +110,9 @@ def test_rule_pre_classifies_matching_transaction(client):
     client.post("/api/rules", json={
         "description": "TRADER JOE'S #542",
         "category": "Groceries",
-        "importer": "Capital One Credit Card",
     })
 
-    _import_csv(client, account_id, "Capital One Credit Card", SAMPLE_CSV)
+    _import_csv(client, account_id, SAMPLE_CSV)
 
     txs = client.get("/api/transactions").json()["data"]
     trader_joes = next(t for t in txs if "TRADER JOE" in t["description"])
@@ -146,10 +125,9 @@ def test_unmatched_transaction_stays_pending(client):
     client.post("/api/rules", json={
         "description": "TRADER JOE'S #542",
         "category": "Groceries",
-        "importer": "Capital One Credit Card",
     })
 
-    _import_csv(client, account_id, "Capital One Credit Card", SAMPLE_CSV)
+    _import_csv(client, account_id, SAMPLE_CSV)
 
     txs = client.get("/api/transactions").json()["data"]
     netflix = next(t for t in txs if "NETFLIX" in t["description"])
@@ -157,31 +135,36 @@ def test_unmatched_transaction_stays_pending(client):
     assert netflix["model_confidence"] is None
 
 
-def test_rule_does_not_apply_to_wrong_importer(client):
-    account_id = _make_account(client)
-    client.post("/api/rules", json={
-        "description": "TRADER JOE'S #542",
-        "category": "Groceries",
-        "importer": "Capital One Checking/Savings",  # different importer
-    })
+def test_rule_applies_across_all_accounts(client):
+    """A rule fires for any account — not scoped to a single importer."""
+    a1 = client.post("/api/accounts", json={
+        "bank": "Capital One", "name": "Card A", "account_number": "0001",
+        "account_type": "credit_card", "default_importer": "Capital One Credit Card",
+    }).json()["id"]
+    a2 = client.post("/api/accounts", json={
+        "bank": "Capital One", "name": "Card B", "account_number": "0002",
+        "account_type": "credit_card", "default_importer": "Capital One Credit Card",
+    }).json()["id"]
+    client.post("/api/rules", json={"description": "TRADER JOE'S #542", "category": "Groceries"})
 
-    _import_csv(client, account_id, "Capital One Credit Card", SAMPLE_CSV)
+    _import_csv(client, a1, SAMPLE_CSV)
+    _import_csv(client, a2, SAMPLE_CSV)
 
-    txs = client.get("/api/transactions").json()["data"]
-    trader_joes = next(t for t in txs if "TRADER JOE" in t["description"])
-    assert trader_joes["model_confidence"] is None  # still pending, rule didn't fire
+    txs = client.get("/api/transactions?limit=100").json()["data"]
+    trader_joes = [t for t in txs if "TRADER JOE" in t["description"]]
+    assert len(trader_joes) == 2
+    assert all(t["model_category"] == "Groceries" for t in trader_joes)
 
 
 # ── Stage 4: "Run Rule Now" ───────────────────────────────────────────────────
 
 def test_apply_rule_updates_matching_transactions(client):
     account_id = _make_account(client)
-    _import_csv(client, account_id, "Capital One Credit Card", SAMPLE_CSV)
+    _import_csv(client, account_id, SAMPLE_CSV)
 
     rule = client.post("/api/rules", json={
         "description": "TRADER JOE'S #542",
         "category": "Groceries",
-        "importer": "Capital One Credit Card",
     }).json()
 
     r = client.post(f"/api/rules/{rule['id']}/apply")
@@ -196,7 +179,7 @@ def test_apply_rule_updates_matching_transactions(client):
 
 def test_apply_rule_skips_user_modified_transactions(client):
     account_id = _make_account(client)
-    _import_csv(client, account_id, "Capital One Credit Card", SAMPLE_CSV)
+    _import_csv(client, account_id, SAMPLE_CSV)
 
     txs = client.get("/api/transactions").json()["data"]
     trader_joes = next(t for t in txs if "TRADER JOE" in t["description"])
@@ -211,7 +194,6 @@ def test_apply_rule_skips_user_modified_transactions(client):
     rule = client.post("/api/rules", json={
         "description": "TRADER JOE'S #542",
         "category": "Groceries",
-        "importer": "Capital One Credit Card",
     }).json()
 
     r = client.post(f"/api/rules/{rule['id']}/apply")
@@ -221,7 +203,7 @@ def test_apply_rule_skips_user_modified_transactions(client):
     assert refreshed["model_category"] == "Shopping"
 
 
-def test_apply_rule_no_matching_file_imports(client):
+def test_apply_rule_no_transactions(client):
     rule = client.post("/api/rules", json=VALID_RULE).json()
     r = client.post(f"/api/rules/{rule['id']}/apply")
     assert r.status_code == 200
@@ -233,18 +215,26 @@ def test_apply_rule_not_found(client):
     assert r.status_code == 404
 
 
-def test_apply_rule_does_not_touch_different_importer_imports(client):
-    account_id = _make_account(client)
-    _import_csv(client, account_id, "Capital One Credit Card", SAMPLE_CSV)
+def test_apply_rule_affects_all_accounts(client):
+    """Run Now applies to matching transactions across all accounts."""
+    a1 = client.post("/api/accounts", json={
+        "bank": "Capital One", "name": "Card A", "account_number": "0001",
+        "account_type": "credit_card", "default_importer": "Capital One Credit Card",
+    }).json()["id"]
+    a2 = client.post("/api/accounts", json={
+        "bank": "Capital One", "name": "Card B", "account_number": "0002",
+        "account_type": "credit_card", "default_importer": "Capital One Credit Card",
+    }).json()["id"]
+    _import_csv(client, a1, SAMPLE_CSV)
+    _import_csv(client, a2, SAMPLE_CSV)
 
     rule = client.post("/api/rules", json={
         "description": "TRADER JOE'S #542",
         "category": "Groceries",
-        "importer": "Capital One Checking/Savings",  # different importer
     }).json()
 
     r = client.post(f"/api/rules/{rule['id']}/apply")
-    assert r.json()["updated"] == 0
+    assert r.json()["updated"] == 2
 
 
 # ── Regex matching ────────────────────────────────────────────────────────────
@@ -262,10 +252,9 @@ def test_regex_rule_matches_substring_case_insensitive(client):
     client.post("/api/rules", json={
         "description": "trader joe",
         "category": "Groceries",
-        "importer": "Capital One Credit Card",
     })
 
-    _import_csv(client, account_id, "Capital One Credit Card", SAMPLE_CSV)
+    _import_csv(client, account_id, SAMPLE_CSV)
 
     txs = client.get("/api/transactions").json()["data"]
     trader_joes = next(t for t in txs if "TRADER JOE" in t["description"])
@@ -278,15 +267,13 @@ def test_regex_rule_with_metacharacters(client):
     client.post("/api/rules", json={
         "description": r"TRADER JOE'S #\d+",
         "category": "Groceries",
-        "importer": "Capital One Credit Card",
     })
     client.post("/api/rules", json={
         "description": "NETFLIX|HULU",
         "category": "Entertainment & Subscriptions",
-        "importer": "Capital One Credit Card",
     })
 
-    _import_csv(client, account_id, "Capital One Credit Card", SAMPLE_CSV)
+    _import_csv(client, account_id, SAMPLE_CSV)
 
     txs = client.get("/api/transactions").json()["data"]
     trader_joes = next(t for t in txs if "TRADER JOE" in t["description"])
@@ -300,15 +287,13 @@ def test_oldest_rule_wins_when_multiple_match(client):
     client.post("/api/rules", json={
         "description": "trader",
         "category": "Shopping",
-        "importer": "Capital One Credit Card",
     })
     client.post("/api/rules", json={
         "description": "joe",
         "category": "Dining & Takeout",
-        "importer": "Capital One Credit Card",
     })
 
-    _import_csv(client, account_id, "Capital One Credit Card", SAMPLE_CSV)
+    _import_csv(client, account_id, SAMPLE_CSV)
 
     txs = client.get("/api/transactions").json()["data"]
     trader_joes = next(t for t in txs if "TRADER JOE" in t["description"])
@@ -322,14 +307,14 @@ def test_uncompilable_legacy_pattern_skipped_at_import(client):
 
     db = TestingSession()
     try:
-        db.add(Rule(description="([", category="Groceries", importer="Capital One Credit Card"))
-        db.add(Rule(description="netflix", category="Entertainment & Subscriptions", importer="Capital One Credit Card"))
+        db.add(Rule(description="([", category="Groceries"))
+        db.add(Rule(description="netflix", category="Entertainment & Subscriptions"))
         db.commit()
     finally:
         db.close()
 
     account_id = _make_account(client)
-    r = _import_csv(client, account_id, "Capital One Credit Card", SAMPLE_CSV)
+    r = _import_csv(client, account_id, SAMPLE_CSV)
     assert r.status_code == 200
 
     txs = client.get("/api/transactions").json()["data"]
@@ -341,12 +326,11 @@ def test_uncompilable_legacy_pattern_skipped_at_import(client):
 
 def test_apply_regex_rule_updates_matching_transactions(client):
     account_id = _make_account(client)
-    _import_csv(client, account_id, "Capital One Credit Card", SAMPLE_CSV)
+    _import_csv(client, account_id, SAMPLE_CSV)
 
     rule = client.post("/api/rules", json={
         "description": "netflix",  # lowercase substring of NETFLIX.COM
         "category": "Entertainment & Subscriptions",
-        "importer": "Capital One Credit Card",
     }).json()
 
     r = client.post(f"/api/rules/{rule['id']}/apply")
@@ -361,7 +345,7 @@ def test_apply_regex_rule_updates_matching_transactions(client):
 
 def test_apply_regex_rule_skips_user_modified(client):
     account_id = _make_account(client)
-    _import_csv(client, account_id, "Capital One Credit Card", SAMPLE_CSV)
+    _import_csv(client, account_id, SAMPLE_CSV)
 
     txs = client.get("/api/transactions").json()["data"]
     netflix = next(t for t in txs if "NETFLIX" in t["description"])
@@ -374,7 +358,6 @@ def test_apply_regex_rule_skips_user_modified(client):
     rule = client.post("/api/rules", json={
         "description": "netflix",
         "category": "Entertainment & Subscriptions",
-        "importer": "Capital One Credit Card",
     }).json()
 
     assert client.post(f"/api/rules/{rule['id']}/apply").json()["updated"] == 0
@@ -392,7 +375,6 @@ def test_update_rule_partial_fields(client):
     body = r.json()
     assert body["description"] == "trader joe"
     assert body["category"] == VALID_RULE["category"]      # untouched
-    assert body["importer"] == VALID_RULE["importer"]      # untouched
 
     r = client.patch(f"/api/rules/{rule['id']}", json={"category": "Shopping"})
     assert r.status_code == 200
@@ -412,12 +394,6 @@ def test_update_rule_not_found(client):
 def test_update_rule_unknown_category(client):
     rule = client.post("/api/rules", json=VALID_RULE).json()
     r = client.patch(f"/api/rules/{rule['id']}", json={"category": "NotACategory"})
-    assert r.status_code == 422
-
-
-def test_update_rule_unknown_importer(client):
-    rule = client.post("/api/rules", json=VALID_RULE).json()
-    r = client.patch(f"/api/rules/{rule['id']}", json={"importer": "Ghost Bank"})
     assert r.status_code == 422
 
 
@@ -450,12 +426,11 @@ def test_apply_rule_chunks_large_id_lists(client, monkeypatch):
         for day in range(1, 6)  # 5 matching rows across 3 chunks of 2
     )
     account_id = _make_account(client)
-    _import_csv(client, account_id, "Capital One Credit Card", header + rows)
+    _import_csv(client, account_id, header + rows)
 
     rule = client.post("/api/rules", json={
         "description": "coffee shop",
         "category": "Dining & Takeout",
-        "importer": "Capital One Credit Card",
     }).json()
 
     r = client.post(f"/api/rules/{rule['id']}/apply")
@@ -471,12 +446,11 @@ def test_apply_rule_chunks_large_id_lists(client, monkeypatch):
 def test_updated_rule_applies_with_new_pattern(client):
     """Editing a rule's pattern changes what Run Now matches."""
     account_id = _make_account(client)
-    _import_csv(client, account_id, "Capital One Credit Card", SAMPLE_CSV)
+    _import_csv(client, account_id, SAMPLE_CSV)
 
     rule = client.post("/api/rules", json={
         "description": "WILL NOT MATCH ANYTHING",
         "category": "Entertainment & Subscriptions",
-        "importer": "Capital One Credit Card",
     }).json()
     assert client.post(f"/api/rules/{rule['id']}/apply").json()["updated"] == 0
 
