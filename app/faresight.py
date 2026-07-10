@@ -121,12 +121,14 @@ INCOME_CTX = {
     "scope": "bank",
     "show_transfers": True,
     "add_options": [
-        {"value": "checking", "label": "Checking Account"},
-        {"value": "savings", "label": "Savings Account"},
+        {"value": "checking",       "label": "Checking Account"},
+        {"value": "savings",        "label": "Savings Account"},
+        {"value": "generic_income", "label": "Asset Account"},
     ],
     "type_options": [
-        {"value": "checking", "label": "Checking"},
-        {"value": "savings", "label": "Savings"},
+        {"value": "checking",       "label": "Checking"},
+        {"value": "savings",        "label": "Savings"},
+        {"value": "generic_income", "label": "Asset Account"},
     ],
 }
 EXPENSES_CTX = {
@@ -136,11 +138,15 @@ EXPENSES_CTX = {
     "scope": "credit_card",
     "show_transfers": False,
     "add_options": [
-        {"value": "credit_card", "label": "Credit Card"},
+        {"value": "credit_card",     "label": "Credit Card"},
+        {"value": "generic_expense", "label": "Loan Account"},
     ],
     "type_options": [
-        {"value": "credit_card", "label": "Credit Card"},
+        {"value": "credit_card",     "label": "Credit Card"},
+        {"value": "generic_expense", "label": "Loan Account"},
     ],
+    "default_add_type":  "credit_card",
+    "default_add_label": "Credit Card",
 }
 
 

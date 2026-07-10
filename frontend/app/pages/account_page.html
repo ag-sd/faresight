@@ -16,7 +16,21 @@
             {{ card_header }}
           </button>
         </h2>
-        {% if add_options|length == 1 %}
+        {% if default_add_type %}
+        <div class="btn-group ms-3">
+          <button class="btn btn-primary btn-sm" type="button"
+                  onclick="openAddAccount('{{ default_add_type }}')">Add {{ default_add_label }}</button>
+          <button class="btn btn-primary btn-sm dropdown-toggle dropdown-toggle-split"
+                  type="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <span class="visually-hidden">Toggle Dropdown</span>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            {% for o in add_options %}
+            <li><button class="dropdown-item" onclick="openAddAccount('{{ o.value }}')">{{ o.label }}</button></li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% elif add_options|length == 1 %}
         <button class="btn btn-primary btn-sm ms-3" type="button" onclick="openAddAccount('{{ add_options[0].value }}')">
           Add {{ add_options[0].label }}
         </button>

@@ -14,9 +14,11 @@ from app.database import Base
 
 
 class AccountType(str, enum.Enum):
-    credit_card = "credit_card"
-    checking = "checking"
-    savings = "savings"
+    credit_card     = "credit_card"
+    checking        = "checking"
+    savings         = "savings"
+    generic_income  = "generic_income"
+    generic_expense = "generic_expense"
 
 
 class SourceFrequency(str, enum.Enum):

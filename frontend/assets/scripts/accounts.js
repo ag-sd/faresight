@@ -14,16 +14,18 @@ let _importers = [];
 let _topCardPageLimit = 5;  // overwritten from /api/config at boot
 
 const ACCOUNT_TYPE_LABELS = {
-  checking: 'Checking',
-  savings: 'Savings',
-  credit_card: 'Credit Card',
+  checking:        'Checking',
+  savings:         'Savings',
+  credit_card:     'Credit Card',
+  generic_income:  'Asset Account',
+  generic_expense: 'Loan Account',
 };
 
 // Which account types the visible accounts list shows for this page.
 function inScope(a) {
   return accountScope === 'credit_card'
-    ? a.account_type === 'credit_card'
-    : a.account_type === 'checking' || a.account_type === 'savings';
+    ? a.account_type === 'credit_card' || a.account_type === 'generic_expense'
+    : a.account_type === 'checking' || a.account_type === 'savings' || a.account_type === 'generic_income';
 }
 
 // ── Tabulator: accounts ───────────────────────────────────────────────────────

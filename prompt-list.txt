@@ -186,6 +186,11 @@ Full suite green. Summarize behavior changes and new tests.
 
 Categorizer should categorize from most recent to oldest
 
+Add new account types - generic income account (401k) / generic expense account (morggage) update the income page to
+include generic income account in the add account button and update the expense page to add the generic expense account
+to the add button. However on the expense page use a boostrap dropdown split button with a default action of credit card
+~/.claude/plans/in-the-import-activity-iridescent-galaxy.md
+
 
 Upgrade to FA 7
 

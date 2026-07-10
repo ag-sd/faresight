@@ -47,6 +47,7 @@ def test_income_page_bank_creation_only(client):
     assert "credit_card" not in html
     assert "openAddAccount('checking')" in html
     assert "openAddAccount('savings')" in html
+    assert "openAddAccount('generic_income')" in html
 
 
 def test_income_page_has_transfers_tab(client):
@@ -97,16 +98,18 @@ def test_expenses_page_has_activity_card(client):
 def test_expenses_page_credit_card_creation_only(client):
     html = _expenses_html(client)
     assert "openAddAccount('credit_card')" in html
+    assert "openAddAccount('generic_expense')" in html
     assert "openAddAccount('checking')" not in html
     assert "openAddAccount('savings')" not in html
 
 
-def test_expenses_page_add_is_direct_button_not_dropdown(client):
-    # Single account type → a plain "Add Credit Card" button, no dropdown.
+def test_expenses_page_add_is_split_button(client):
+    # Default action = credit card; caret reveals Loan Account option.
     html = _expenses_html(client)
+    assert "dropdown-toggle-split" in html
     assert 'onclick="openAddAccount(\'credit_card\')"' in html
-    assert "dropdown-toggle" not in html
     assert "Add Credit Card" in html
+    assert "openAddAccount('generic_expense')" in html
 
 
 def test_income_page_add_is_dropdown(client):

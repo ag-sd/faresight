@@ -26,13 +26,18 @@ logger = logging.getLogger(__name__)
 
 
 def _filter_by_account_type(q, account_type: Optional[str]):
-    """Join accounts and filter by type. 'bank' matches checking + savings."""
+    """Join accounts and filter by type. 'bank' matches checking/savings/generic_income;
+    'credit_card' matches credit_card/generic_expense."""
     if not account_type or account_type == "all":
         return q
     q = q.join(Account, Transaction.account_id == Account.id)
     if account_type == "credit_card":
-        return q.filter(Account.account_type == AccountType.credit_card)
-    return q.filter(Account.account_type.in_([AccountType.checking, AccountType.savings]))
+        return q.filter(Account.account_type.in_([
+            AccountType.credit_card, AccountType.generic_expense
+        ]))
+    return q.filter(Account.account_type.in_([
+        AccountType.checking, AccountType.savings, AccountType.generic_income
+    ]))
 
 
 def _dedupe_rows(db: Session, txs) -> tuple[list, int]:
